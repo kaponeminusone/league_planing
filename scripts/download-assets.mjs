@@ -335,6 +335,40 @@ async function copyMapImage() {
   }
 }
 
+async function copyAppIcon() {
+  const dest = path.join(ROOT, 'public', 'app-icon.png')
+  const candidates = [
+    path.join(ROOT, 'mover', 'icon_v2.png'),
+    path.join(ROOT, 'mover', 'icon.png'),
+  ]
+
+  for (const src of candidates) {
+    try {
+      await fs.access(src)
+      await fs.copyFile(src, dest)
+      console.log(`  ✓ app-icon.png (desde ${path.relative(ROOT, src)})`)
+      return
+    } catch {
+      /* try next */
+    }
+  }
+
+  console.warn('  ⚠ mover/icon_v2.png no encontrado')
+}
+
+async function copyBootIcon() {
+  await copyAppIcon()
+  const src = path.join(ROOT, 'mover', 'League_of_Legends_icon.svg')
+  const dest = path.join(ROOT, 'public', 'lol-icon.svg')
+  try {
+    await fs.access(src)
+    await fs.copyFile(src, dest)
+    console.log('  ✓ lol-icon.svg (icono boot legacy)')
+  } catch {
+    /* opcional */
+  }
+}
+
 async function copyMoverMinions() {
   console.log('  Minions (mover/)...')
   const pairs = [
@@ -562,6 +596,7 @@ async function main() {
     ])
 
   await copyMapImage()
+  await copyBootIcon()
 
   const manifest = {
     version,

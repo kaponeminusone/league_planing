@@ -7,7 +7,7 @@ import {
   MINION_DRAG_MIME,
 } from '../drag'
 import { roleIconPath } from '../roles'
-import { MINION_BLUE_ICON, MINION_RED_ICON } from '../types'
+import { MINION_BLUE_ICON, MINION_RED_ICON, APP_ICON_SRC } from '../types'
 
 const GROUPS = [
   { key: 'ping', label: 'P' },
@@ -46,31 +46,32 @@ export function AssetDock() {
         clearPlacement()
       }}
     >
-      {GROUPS.map((g) => {
-        const items = quickAssets.filter((a) => a.category === g.key)
-        if (!items.length) return null
-        return (
-          <div key={g.key} className="asset-dock__group">
-            <span className="asset-dock__tag">{g.label}</span>
-            {items.map((asset) => (
-              <button
-                key={asset.id}
-                type="button"
-                className={`asset-dock__item ${selectedAsset?.id === asset.id ? 'asset-dock__item--on' : ''}`}
-                title={`${asset.label}\nClic: uno · Shift/Ctrl: varios · Clic der: cancelar`}
-                onClick={() => {
-                  setSelectedAsset(asset)
-                  setTool('place')
-                }}
-              >
-                <img src={asset.path} alt={asset.label} loading="lazy" draggable={false} />
-              </button>
-            ))}
-          </div>
-        )
-      })}
+      <div className="asset-dock__row">
+        {GROUPS.map((g) => {
+          const items = quickAssets.filter((a) => a.category === g.key)
+          if (!items.length) return null
+          return (
+            <div key={g.key} className="asset-dock__group">
+              <span className="asset-dock__tag">{g.label}</span>
+              {items.map((asset) => (
+                <button
+                  key={asset.id}
+                  type="button"
+                  className={`asset-dock__item ${selectedAsset?.id === asset.id ? 'asset-dock__item--on' : ''}`}
+                  title={`${asset.label}\nClic: uno · Shift/Ctrl: varios · Clic der: cancelar`}
+                  onClick={() => {
+                    setSelectedAsset(asset)
+                    setTool('place')
+                  }}
+                >
+                  <img src={asset.path} alt={asset.label} loading="lazy" draggable={false} />
+                </button>
+              ))}
+            </div>
+          )
+        })}
 
-      <div className="asset-dock__group asset-dock__group--enemy">
+        <div className="asset-dock__group asset-dock__group--enemy">
         <span className="asset-dock__tag asset-dock__tag--enemy">E</span>
         {enemyTeam.map((slot, index) => {
           const champ = slot.championId ? champsById.get(slot.championId) : null
@@ -156,6 +157,15 @@ export function AssetDock() {
           <img src={MINION_RED_ICON} alt="Minion rojo" draggable={false} />
         </button>
       </div>
+      </div>
+
+      <img
+        className="asset-dock__brand"
+        src={APP_ICON_SRC}
+        alt=""
+        aria-hidden
+        draggable={false}
+      />
     </div>
   )
 }

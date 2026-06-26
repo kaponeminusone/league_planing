@@ -11,6 +11,92 @@
   height: 100%;
 }
 
+.planning__stage--booting {
+  opacity: 0;
+  visibility: hidden;
+  transform: scale(1.045);
+  pointer-events: none;
+}
+
+.planning--ready .planning__stage {
+  opacity: 1;
+  transform: scale(1);
+  transition:
+    opacity 1s ease 0.08s,
+    transform 1.05s cubic-bezier(0.22, 1, 0.36, 1) 0.08s;
+}
+
+/* ── Boot splash (primera carga de sesión) ── */
+.planning-boot {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  background: #010a13;
+  pointer-events: all;
+  transition:
+    opacity 1s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 1s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.planning-boot--exit {
+  opacity: 0;
+  transform: scale(1.08);
+  pointer-events: none;
+}
+
+.planning-boot__inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.planning-boot__logo {
+  width: 76px;
+  height: 76px;
+  object-fit: contain;
+  filter: drop-shadow(0 0 24px rgba(194, 143, 44, 0.4));
+  animation: planning-boot-pulse 1.35s ease-in-out infinite;
+}
+
+.planning-boot--exit .planning-boot__logo {
+  animation: planning-boot-exit-logo 1s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.planning-boot__message {
+  margin: 0;
+  font-size: 0.82rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(200, 170, 110, 0.75);
+  min-height: 1.2em;
+}
+
+@keyframes planning-boot-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.82;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 1;
+  }
+}
+
+@keyframes planning-boot-exit-logo {
+  from {
+    transform: scale(1);
+    opacity: 1;
+  }
+  to {
+    transform: scale(1.35);
+    opacity: 0;
+  }
+}
+
 /* Glass float panels */
 .float {
   position: absolute;
@@ -787,11 +873,31 @@
   right: 6px;
   bottom: 6px;
   max-width: calc(100% - 12px);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+}
+
+.asset-dock__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: thin;
-  gap: 6px;
-  padding: 4px 6px;
+}
+
+.asset-dock__brand {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+  opacity: 0.5;
+  pointer-events: none;
+  user-select: none;
 }
 
 .asset-dock__group {
@@ -1993,9 +2099,20 @@
 }
 
 .ide__logo {
-  font-size: 0.65rem;
-  color: var(--accent);
-  opacity: 0.9;
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+  flex-shrink: 0;
+  opacity: 0.95;
+}
+
+.ide__title {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-right: 2px;
+  opacity: 0.92;
+  white-space: nowrap;
 }
 
 .ide__views {

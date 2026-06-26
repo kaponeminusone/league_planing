@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import type { Manifest, SectionId } from './types'
 import { Section } from './components/Section'
+import { isBootCached } from './planning/planningBoot'
 import './App.css'
 
 const PlanningView = lazy(() =>
@@ -28,6 +29,10 @@ const NAV: { id: SectionId; label: string }[] = [
   { id: 'wards', label: 'Wards' },
 ]
 
+function PlanningSuspenseFallback() {
+  return null
+}
+
 function SectionFallback() {
   return <div className="loading-block">Cargando módulo…</div>
 }
@@ -50,10 +55,10 @@ function AssetBrowser({ manifest }: { manifest: Manifest }) {
     <div className="app">
       <aside className="sidebar">
         <div className="brand">
-          <span className="brand__mark">LoL</span>
+          <img className="brand__mark" src="/app-icon.png" alt="" width={40} height={40} draggable={false} />
           <div>
-            <strong>Asset Browser</strong>
-            <p className="muted">Patch {manifest.version}</p>
+            <strong>League Planning</strong>
+            <p className="muted">Assets · Patch {manifest.version}</p>
           </div>
         </div>
         <nav className="nav">
@@ -77,7 +82,7 @@ function AssetBrowser({ manifest }: { manifest: Manifest }) {
       <main className="main">
         <header className="topbar">
           <div>
-            <h1>Wireframe — League Assets</h1>
+            <h1>League Planning — Assets</h1>
             <p className="muted">Vista previa de assets oficiales</p>
           </div>
           <div className="topbar__stats">
@@ -200,6 +205,9 @@ export default function App() {
   }
 
   if (!manifest) {
+    if (!isBootCached()) {
+      return null
+    }
     return (
       <div className="app app--loading">
         <div className="loading-block">Cargando manifest…</div>
@@ -210,7 +218,8 @@ export default function App() {
   return (
     <div className="ide">
       <header className="ide__titlebar">
-        <span className="ide__logo">◆</span>
+        <img className="ide__logo" src="/app-icon.png" alt="" width={16} height={16} draggable={false} />
+        <span className="ide__title">League Planning</span>
         <div className="ide__views">
           <button
             type="button"
@@ -232,7 +241,7 @@ export default function App() {
 
       <div className={`ide__body ${view === 'assets' ? 'ide__body--scroll' : ''}`}>
         {view === 'planning' ? (
-          <Suspense fallback={<div className="loading-block">Cargando…</div>}>
+          <Suspense fallback={<PlanningSuspenseFallback />}>
             <PlanningView manifest={manifest} />
           </Suspense>
         ) : (

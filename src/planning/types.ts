@@ -1,4 +1,5 @@
 export const MAP_SRC = '/assets/minimap/grieta.png'
+export const APP_ICON_SRC = '/app-icon.png'
 export const MARKER_SIZE = 36
 export const MIN_ZOOM = 0.4
 export const MAX_ZOOM = 3

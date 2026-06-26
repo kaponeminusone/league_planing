@@ -2,11 +2,66 @@
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" href="/app-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>LoL Asset Browser — Wireframe</title>
+    <title>League Planning</title>
+    <style>
+      html.boot-pending,
+      html.boot-pending body {
+        background: #010a13;
+        overflow: hidden;
+      }
+
+      #boot-splash {
+        position: fixed;
+        inset: 0;
+        z-index: 2147483646;
+        display: none;
+        place-items: center;
+        background: #010a13;
+      }
+
+      html.boot-pending #boot-splash {
+        display: grid;
+      }
+
+      .boot-splash__logo {
+        width: 76px;
+        height: 76px;
+        filter: drop-shadow(0 0 24px rgba(194, 143, 44, 0.4));
+        animation: boot-splash-pulse 1.35s ease-in-out infinite;
+      }
+
+      @keyframes boot-splash-pulse {
+        0%,
+        100% {
+          transform: scale(1);
+          opacity: 0.82;
+        }
+        50% {
+          transform: scale(1.1);
+          opacity: 1;
+        }
+      }
+    </style>
+    <script>
+      ;(function () {
+        try {
+          if (sessionStorage.getItem('lol-planning-boot-v1') !== '1') {
+            document.documentElement.classList.add('boot-pending')
+          } else {
+            document.documentElement.classList.add('boot-done')
+          }
+        } catch (e) {
+          document.documentElement.classList.add('boot-done')
+        }
+      })()
+    </script>
   </head>
   <body>
+    <div id="boot-splash" aria-live="polite" aria-busy="true">
+      <img class="boot-splash__logo" src="/app-icon.png" alt="" width="76" height="76" />
+    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

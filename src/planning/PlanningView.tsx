@@ -8,14 +8,18 @@ import { Toolbar } from './components/Toolbar'
 import { SyncPanel } from './components/SyncPanel'
 import { ChampionPoolModal } from './components/ChampionPoolModal'
 import { EnemyPoolModal } from './components/EnemyPoolModal'
+import { PlanningBootLoader } from './components/PlanningBootLoader'
+import { usePlanningBoot } from './usePlanningBoot'
 import type { Manifest } from '../types'
 import './planning.css'
 
 export function PlanningView({ manifest }: { manifest: Manifest }) {
+  const { phase, showLoader, isRevealed } = usePlanningBoot()
+
   return (
     <PlanningProvider manifest={manifest}>
-      <div className="planning">
-        <div className="planning__stage">
+      <div className={`planning ${isRevealed ? 'planning--ready' : ''}`}>
+        <div className={`planning__stage ${isRevealed ? '' : 'planning__stage--booting'}`}>
           <MapCanvas />
           <MapMinimap />
           <TeamPoolBar />
@@ -24,6 +28,7 @@ export function PlanningView({ manifest }: { manifest: Manifest }) {
           <Toolbar />
           <AssetDock />
         </div>
+        {showLoader && <PlanningBootLoader phase={phase} />}
         <ChampionPoolModal />
         <EnemyPoolModal />
       </div>

@@ -35,6 +35,9 @@ export function parseTimerInput(raw: string): number | null {
   return Number.isNaN(n) ? null : n
 }
 
+/** Punto focal al enfocar jugador: centro de pantalla + 25% a la derecha (panel EQ). */
+const FOCUS_SCREEN_X_RATIO = 0.75
+
 export function focusViewportOnPoint(
   point: MapPoint,
   containerW: number,
@@ -45,7 +48,7 @@ export function focusViewportOnPoint(
 ): Viewport {
   return {
     zoom,
-    x: containerW * 0.38 - point.x * mapW * zoom,
+    x: containerW * FOCUS_SCREEN_X_RATIO - point.x * mapW * zoom,
     y: containerH / 2 - point.y * mapH * zoom,
   }
 }
