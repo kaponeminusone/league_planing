@@ -288,6 +288,30 @@ async function downloadSummonerSpells(version, summonerData) {
   return spells
 }
 
+async function copyMapImage() {
+  console.log('\n📦 Mapa principal (grieta)...')
+  const src = path.join(ROOT, 'mover', 'grieta.png')
+  const dest = path.join(ASSETS, 'minimap', 'grieta.png')
+  await fs.mkdir(path.dirname(dest), { recursive: true })
+
+  try {
+    await fs.access(src)
+    await fs.copyFile(src, dest)
+    console.log('  ✓ grieta.png (desde mover/)')
+    return true
+  } catch {
+    console.warn('  ⚠ mover/grieta.png no encontrado; usa map_full como respaldo')
+    try {
+      await fs.access(path.join(ASSETS, 'minimap', 'map_full.png'))
+      await fs.copyFile(path.join(ASSETS, 'minimap', 'map_full.png'), dest)
+      console.log('  ✓ grieta.png (copia de map_full.png)')
+      return true
+    } catch {
+      return false
+    }
+  }
+}
+
 async function downloadMinimapAssets() {
   console.log('\n📦 Minimap & Pings (CommunityDragon)...')
 
@@ -489,6 +513,8 @@ async function main() {
       downloadWards(),
       downloadRoleIcons(),
     ])
+
+  await copyMapImage()
 
   const manifest = {
     version,
