@@ -41,7 +41,7 @@ export function focusViewportOnPoint(
   containerH: number,
   mapW: number,
   mapH: number,
-  zoom = 1.65,
+  zoom = 0.5,
 ): Viewport {
   return {
     zoom,
