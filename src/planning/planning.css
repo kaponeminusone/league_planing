@@ -60,13 +60,13 @@
 /* ── Landmarks (playbook) ── */
 .landmarks {
   top: 6px;
-  left: 38px;
-  max-width: calc(100% - 140px);
+  left: 148px;
+  max-width: calc(100% - 160px);
   flex-wrap: wrap;
 }
 
 .team-panel--open + .landmarks {
-  left: calc(min(280px, 50vw) + 10px);
+  left: calc(min(280px, 50vw) + 154px);
 }
 
 .landmark {
@@ -138,10 +138,124 @@
   font-size: 0.7rem;
 }
 
-/* ── Sync strip ── */
+/* ── Sync panel (left) ── */
+.sync-panel {
+  top: 6px;
+  left: 6px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  min-width: 132px;
+  max-width: 160px;
+  padding: 6px 8px;
+}
+
+.sync-panel__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sync-panel__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.sync-panel__dot--ok {
+  background: #4ade80;
+  box-shadow: 0 0 6px rgba(74, 222, 128, 0.6);
+}
+.sync-panel__dot--wait {
+  background: #fbbf24;
+}
+.sync-panel__dot--off {
+  background: #f87171;
+}
+
+.sync-panel__user {
+  width: 100%;
+  height: 22px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.35);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.68rem;
+}
+
+.sync-panel__users-label {
+  display: block;
+  font-size: 0.58rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+
+.sync-panel__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.sync-panel__item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.64rem;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.sync-panel__item--self {
+  color: var(--accent);
+}
+
+.sync-panel__gem {
+  width: 7px;
+  height: 7px;
+  border-radius: 1px;
+  background: var(--peer-color, var(--accent));
+  transform: rotate(45deg);
+  flex-shrink: 0;
+  box-shadow: 0 0 5px var(--peer-color, var(--accent));
+}
+
+.sync-panel__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.sync-panel__jugada {
+  color: #4ade80;
+  font-size: 0.5rem;
+  flex-shrink: 0;
+}
+
+.sync-panel__activity {
+  margin: 0;
+  font-size: 0.58rem;
+  color: var(--accent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* legacy sync-strip selectors kept for compatibility */
 .sync-strip {
   top: 6px;
-  right: 6px;
+  left: 6px;
 }
 
 .sync-strip__dot {
@@ -202,7 +316,7 @@
 
 /* ── Team panel (collapsible) ── */
 .team-panel {
-  top: 6px;
+  top: 108px;
   left: 6px;
   bottom: 52px;
   flex-direction: column;

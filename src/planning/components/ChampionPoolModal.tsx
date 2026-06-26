@@ -25,11 +25,13 @@ export function ChampionPoolModal() {
   const [search, setSearch] = useState('')
   const [rolePicker, setRolePicker] = useState<RolePickerState | null>(null)
   const gridRef = useRef<HTMLDivElement>(null)
+  const initialTeamRef = useRef(team)
 
   const open = poolModalOpen
 
   useEffect(() => {
     if (open) {
+      initialTeamRef.current = team
       setDraft(team)
       setActiveMember(0)
       setSearch('')
@@ -66,8 +68,16 @@ export function ChampionPoolModal() {
   const poolByChamp = new Map(member.pool.map((e) => [e.championId, e]))
   const inGame = IN_GAME_ROLES.includes(member.role as (typeof IN_GAME_ROLES)[number])
 
+  const applyDraft = (updater: (prev: TeamMember[]) => TeamMember[]) => {
+    setDraft((prev) => {
+      const next = updater(prev)
+      updateTeam(next)
+      return next
+    })
+  }
+
   const patchMember = (index: number, patch: Partial<TeamMember>) => {
-    setDraft((prev) => prev.map((m, i) => (i === index ? { ...m, ...patch } : m)))
+    applyDraft((prev) => prev.map((m, i) => (i === index ? { ...m, ...patch } : m)))
   }
 
   const setPool = (index: number, pool: PoolEntry[]) => {
@@ -124,12 +134,11 @@ export function ChampionPoolModal() {
   }
 
   const save = () => {
-    updateTeam(draft)
     setPoolModalOpen(false)
   }
 
   const onClose = () => {
-    setDraft(team)
+    updateTeam(initialTeamRef.current)
     setPoolModalOpen(false)
   }
 
@@ -187,9 +196,15 @@ export function ChampionPoolModal() {
               className="pool-modal__add"
               onClick={() => {
                 if (draft.length >= 6) return
-                setDraft([
-                  ...draft,
-                  { id: createId(), name: 'Nuevo', role: 'Sub', side: 'none', pool: [] },
+                applyDraft((prev) => [
+                  ...prev,
+                  {
+                    id: createId(),
+                    name: 'Nuevo',
+                    role: 'Sub',
+                    side: 'none' as const,
+                    pool: [],
+                  },
                 ])
                 setActiveMember(draft.length)
                 setRolePicker(null)

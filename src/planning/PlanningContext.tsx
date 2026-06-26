@@ -175,6 +175,11 @@ export function PlanningProvider({
   const historyRef = useRef<Map<string, JugadaHistory>>(new Map())
 
   const patchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const patchThrottleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingPatchRef = useRef<{ jugada: Jugada; action: string } | null>(null)
+  const lastPatchSentAt = useRef(0)
+  const activeIdRef = useRef(activeId)
+  activeIdRef.current = activeId
 
   const quickAssets = useMemo(() => buildQuickAssets(manifest), [manifest])
   const activeJugada = jugadas.find((j) => j.id === activeId) ?? jugadas[0]
@@ -224,28 +229,92 @@ export function PlanningProvider({
     onRemoteViewport,
   })
 
+  const flushPatch = useCallback(() => {
+    const pending = pendingPatchRef.current
+    if (!pending) return
+    sync.broadcastPatch(pending.jugada, pending.action)
+    pendingPatchRef.current = null
+    lastPatchSentAt.current = Date.now()
+    patchTimer.current = null
+    patchThrottleTimer.current = null
+  }, [sync])
+
   const schedulePatch = useCallback(
-    (updated: Jugada, action: string, debounceMs = 0) => {
-      if (patchTimer.current) clearTimeout(patchTimer.current)
-      const send = () => sync.broadcastPatch(updated, action)
-      if (debounceMs > 0) patchTimer.current = setTimeout(send, debounceMs)
-      else send()
+    (
+      updated: Jugada,
+      action: string,
+      mode: 'instant' | 'debounce' | 'throttle' = 'instant',
+      ms = 0,
+    ) => {
+      pendingPatchRef.current = { jugada: updated, action }
+
+      if (mode === 'instant') {
+        if (patchTimer.current) clearTimeout(patchTimer.current)
+        if (patchThrottleTimer.current) clearTimeout(patchThrottleTimer.current)
+        flushPatch()
+        return
+      }
+
+      if (mode === 'debounce') {
+        if (patchTimer.current) clearTimeout(patchTimer.current)
+        patchTimer.current = setTimeout(flushPatch, ms || 400)
+        return
+      }
+
+      const wait = ms || 50
+      const elapsed = Date.now() - lastPatchSentAt.current
+      if (elapsed >= wait) {
+        flushPatch()
+        return
+      }
+      if (patchThrottleTimer.current) return
+      patchThrottleTimer.current = setTimeout(flushPatch, wait - elapsed)
     },
-    [sync],
+    [flushPatch],
   )
 
   const patchJugada = useCallback(
-    (patch: Partial<Jugada>, syncAction?: string, debounceMs = 0) => {
-      if (!activeJugada) return
-      const updated: Jugada = {
-        ...activeJugada,
-        ...patch,
-        updatedAt: new Date().toISOString(),
-      }
-      setJugadas((prev) => replaceJugada(prev, updated))
-      if (syncAction) schedulePatch(updated, syncAction, debounceMs)
+    (
+      patch: Partial<Jugada>,
+      syncAction?: string,
+      syncMode: 'instant' | 'debounce' | 'throttle' = 'instant',
+      syncMs = 0,
+    ) => {
+      setJugadas((prev) => {
+        const current = prev.find((j) => j.id === activeIdRef.current)
+        if (!current) return prev
+        const updated: Jugada = {
+          ...current,
+          ...patch,
+          updatedAt: new Date().toISOString(),
+        }
+        if (syncAction) schedulePatch(updated, syncAction, syncMode, syncMs)
+        return replaceJugada(prev, updated)
+      })
     },
-    [activeJugada, schedulePatch],
+    [schedulePatch],
+  )
+
+  const patchActiveJugada = useCallback(
+    (
+      build: (current: Jugada) => Partial<Jugada>,
+      syncAction?: string,
+      syncMode: 'instant' | 'debounce' | 'throttle' = 'instant',
+      syncMs = 0,
+    ) => {
+      setJugadas((prev) => {
+        const current = prev.find((j) => j.id === activeIdRef.current)
+        if (!current) return prev
+        const updated: Jugada = {
+          ...current,
+          ...build(current),
+          updatedAt: new Date().toISOString(),
+        }
+        if (syncAction) schedulePatch(updated, syncAction, syncMode, syncMs)
+        return replaceJugada(prev, updated)
+      })
+    },
+    [schedulePatch],
   )
 
   const getHistory = useCallback(
@@ -274,23 +343,24 @@ export function PlanningProvider({
 
   const applyContent = useCallback(
     (markers: MapMarker[], strokes: DrawingStroke[], syncAction: string) => {
-      patchJugada({ markers, strokes }, syncAction, 0)
+      patchActiveJugada(() => ({ markers, strokes }), syncAction, 'instant')
     },
-    [patchJugada],
+    [patchActiveJugada],
   )
 
   const patchContent = useCallback(
     (
-      patch: { markers?: MapMarker[]; strokes?: DrawingStroke[] },
+      build: (current: Jugada) => Partial<Jugada>,
       syncAction: string,
-      debounceMs = 0,
+      syncMode: 'instant' | 'debounce' | 'throttle' = 'instant',
+      syncMs = 0,
       recordHistory = true,
     ) => {
       if (!activeJugada) return
       if (recordHistory) pushHistory()
-      patchJugada(patch, syncAction, debounceMs)
+      patchActiveJugada(build, syncAction, syncMode, syncMs)
     },
-    [activeJugada, patchJugada, pushHistory],
+    [activeJugada, patchActiveJugada, pushHistory],
   )
 
   const undo = useCallback(() => {
@@ -331,55 +401,56 @@ export function PlanningProvider({
   const addMarker = useCallback(
     (m: Omit<MapMarker, 'id'>) => {
       patchContent(
-        { markers: [...activeJugada.markers, { ...m, id: createId() }] },
+        (j) => ({ markers: [...j.markers, { ...m, id: createId() }] }),
         `colocó ${m.label}`,
       )
     },
-    [activeJugada, patchContent],
+    [patchContent],
   )
 
   const placePlayerMarker = useCallback(
     (m: Omit<MapMarker, 'id' | 'category'>) => {
-      const withoutPlayer = activeJugada.markers.filter((x) => x.playerId !== m.playerId)
-      const marker: MapMarker = {
-        ...m,
-        id: createId(),
-        category: 'player',
-        label: `${m.playerName} — ${m.championName}`,
-      }
-      patchContent(
-        { markers: [...withoutPlayer, marker] },
-        `colocó a ${m.playerName} (${m.championName})`,
-      )
+      patchContent((j) => {
+        const withoutPlayer = j.markers.filter((x) => x.playerId !== m.playerId)
+        const marker: MapMarker = {
+          ...m,
+          id: createId(),
+          category: 'player',
+          label: `${m.playerName} — ${m.championName}`,
+        }
+        return { markers: [...withoutPlayer, marker] }
+      }, `colocó a ${m.playerName} (${m.championName})`)
     },
-    [activeJugada, patchContent],
+    [patchContent],
   )
 
   const removeMarker = useCallback(
     (id: string, recordHistory = true) => {
       patchContent(
-        { markers: activeJugada.markers.filter((m) => m.id !== id) },
+        (j) => ({ markers: j.markers.filter((m) => m.id !== id) }),
         'eliminó un marcador',
+        'instant',
         0,
         recordHistory,
       )
       setSelectedMarkerId((cur) => (cur === id ? null : cur))
     },
-    [activeJugada, patchContent],
+    [patchContent],
   )
 
   const updateMarker = useCallback(
     (id: string, patch: Partial<MapMarker>, immediate = true, recordHistory = true) => {
       patchContent(
-        {
-          markers: activeJugada.markers.map((m) => (m.id === id ? { ...m, ...patch } : m)),
-        },
-        'editó marcador',
-        immediate ? 0 : 160,
+        (j) => ({
+          markers: j.markers.map((m) => (m.id === id ? { ...m, ...patch } : m)),
+        }),
+        'movió marcador',
+        immediate ? 'instant' : 'throttle',
+        40,
         recordHistory,
       )
     },
-    [activeJugada, patchContent],
+    [patchContent],
   )
 
   const moveMarker = useCallback(
@@ -411,21 +482,21 @@ export function PlanningProvider({
   const addStroke = useCallback(
     (s: Omit<DrawingStroke, 'id'>) => {
       patchContent(
-        { strokes: [...activeJugada.strokes, { ...s, id: createId() }] },
+        (j) => ({ strokes: [...j.strokes, { ...s, id: createId() }] }),
         s.type === 'arrow' ? 'dibujó una flecha' : 'dibujó en el mapa',
       )
     },
-    [activeJugada, patchContent],
+    [patchContent],
   )
 
   const removeStroke = useCallback(
     (id: string) => {
       patchContent(
-        { strokes: activeJugada.strokes.filter((s) => s.id !== id) },
+        (j) => ({ strokes: j.strokes.filter((s) => s.id !== id) }),
         'borró un trazo',
       )
     },
-    [activeJugada, patchContent],
+    [patchContent],
   )
 
   const switchJugada = useCallback(
@@ -447,7 +518,7 @@ export function PlanningProvider({
   }, [jugadas, sync])
 
   const renameJugada = useCallback(
-    (name: string) => patchJugada({ name }, 'renombró la jugada', 400),
+    (name: string) => patchJugada({ name }, 'renombró la jugada', 'debounce', 400),
     [patchJugada],
   )
 

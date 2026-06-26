@@ -30,6 +30,10 @@ function freshCursors(list: PeerCursor[]): PeerCursor[] {
   return list.filter((c) => now - c.at < CURSOR_STALE_MS)
 }
 
+function isSelfMessage(msg: ServerMessage, selfId: string) {
+  return 'clientId' in msg && msg.clientId === selfId
+}
+
 export function useSync(options: UseSyncOptions) {
   const [status, setStatus] = useState<SyncStatus>('connecting')
   const [userName, setUserNameState] = useState(loadUserName)
@@ -41,7 +45,6 @@ export function useSync(options: UseSyncOptions) {
 
   const wsRef = useRef<WebSocket | null>(null)
   const clientIdRef = useRef(loadClientId())
-  const remoteLock = useRef(false)
   const bootstrappedRef = useRef(false)
   const activityTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const viewportTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -65,76 +68,64 @@ export function useSync(options: UseSyncOptions) {
     [send],
   )
 
-  const applyRemote = useCallback((fn: () => void) => {
-    remoteLock.current = true
-    fn()
-    queueMicrotask(() => {
-      remoteLock.current = false
-    })
-  }, [])
+  const handleServerMessage = useCallback((msg: ServerMessage) => {
+    const opts = optionsRef.current
+    const selfId = clientIdRef.current
 
-  const handleServerMessage = useCallback(
-    (msg: ServerMessage) => {
-      const opts = optionsRef.current
-      const selfId = clientIdRef.current
+    if (isSelfMessage(msg, selfId)) return
 
-      if ('clientId' in msg && msg.clientId === selfId) return
-
-      switch (msg.type) {
-        case 'init': {
-          const s = msg.state
-          if (s.jugadas.length) {
-            applyRemote(() => opts.onRemoteJugadas(s.jugadas, s.activeId))
-          }
-          if (s.team.length) applyRemote(() => opts.onRemoteTeam(s.team))
-          setLastEditBy(s.lastEditBy)
-          setLastEditAction(s.lastEditAction)
-          setUsers(msg.users)
-          break
-        }
-        case 'presence':
-          setUsers(msg.users)
-          break
-        case 'cursors':
-          setPeerCursors(freshCursors(msg.cursors.filter((c) => c.clientId !== selfId)))
-          break
-        case 'viewport':
-          applyRemote(() => opts.onRemoteViewport(msg.jugadaId, msg.viewport))
-          setLiveActivity(`${msg.by} movió el mapa`)
-          break
-        case 'jugada':
-          applyRemote(() => opts.onRemoteJugada(msg.jugada))
-          setLastEditBy(msg.by)
-          setLastEditAction(msg.action ?? 'editó la jugada')
-          setLiveActivity(`${msg.by}: ${msg.action ?? 'editó'}`)
-          break
-        case 'jugadas':
-          applyRemote(() => opts.onRemoteJugadas(msg.jugadas, msg.activeId))
-          setLastEditBy(msg.by)
-          setLastEditAction(msg.action ?? 'actualizó el playbook')
-          setLiveActivity(`${msg.by}: ${msg.action ?? 'actualizó el playbook'}`)
-          break
-        case 'active':
-          applyRemote(() => opts.onRemoteActive(msg.activeId))
-          setLastEditBy(msg.by)
-          setLastEditAction('cambió de jugada')
-          setLiveActivity(`${msg.by} cambió de jugada`)
-          break
-        case 'team':
-          applyRemote(() => opts.onRemoteTeam(msg.team))
-          setLastEditBy(msg.by)
-          setLastEditAction('actualizó pools')
-          break
-        case 'activity':
-          setLiveActivity(`${msg.userName}: ${msg.action}`)
-          break
+    switch (msg.type) {
+      case 'init': {
+        const s = msg.state
+        if (s.jugadas.length) opts.onRemoteJugadas(s.jugadas, s.activeId)
+        if (s.team.length) opts.onRemoteTeam(s.team)
+        setLastEditBy(s.lastEditBy)
+        setLastEditAction(s.lastEditAction)
+        setUsers(msg.users)
+        break
       }
+      case 'presence':
+        setUsers(msg.users)
+        break
+      case 'cursors':
+        setPeerCursors(freshCursors(msg.cursors.filter((c) => c.clientId !== selfId)))
+        break
+      case 'viewport':
+        opts.onRemoteViewport(msg.jugadaId, msg.viewport)
+        setLiveActivity(`${msg.by} movió el mapa`)
+        break
+      case 'jugada':
+        opts.onRemoteJugada(msg.jugada)
+        setLastEditBy(msg.by)
+        setLastEditAction(msg.action ?? 'editó la jugada')
+        setLiveActivity(`${msg.by}: ${msg.action ?? 'editó'}`)
+        break
+      case 'jugadas':
+        opts.onRemoteJugadas(msg.jugadas, msg.activeId)
+        setLastEditBy(msg.by)
+        setLastEditAction(msg.action ?? 'actualizó el playbook')
+        setLiveActivity(`${msg.by}: ${msg.action ?? 'actualizó el playbook'}`)
+        break
+      case 'active':
+        opts.onRemoteActive(msg.activeId)
+        setLastEditBy(msg.by)
+        setLastEditAction('cambió de jugada')
+        setLiveActivity(`${msg.by} cambió de jugada`)
+        break
+      case 'team':
+        opts.onRemoteTeam(msg.team)
+        setLastEditBy(msg.by)
+        setLastEditAction('actualizó pools')
+        setLiveActivity(`${msg.by} actualizó el equipo`)
+        break
+      case 'activity':
+        setLiveActivity(`${msg.userName}: ${msg.action}`)
+        break
+    }
 
-      if (activityTimer.current) clearTimeout(activityTimer.current)
-      activityTimer.current = setTimeout(() => setLiveActivity(null), 4000)
-    },
-    [applyRemote],
-  )
+    if (activityTimer.current) clearTimeout(activityTimer.current)
+    activityTimer.current = setTimeout(() => setLiveActivity(null), 4000)
+  }, [])
 
   useEffect(() => {
     const tick = setInterval(() => {
@@ -160,6 +151,7 @@ export function useSync(options: UseSyncOptions) {
           type: 'join',
           clientId: clientIdRef.current,
           userName: loadUserName(),
+          activeId: opts.activeId,
         }
         if (!bootstrappedRef.current) {
           msg.state = { jugadas: opts.jugadas, activeId: opts.activeId, team: opts.team }
@@ -180,7 +172,7 @@ export function useSync(options: UseSyncOptions) {
       ws.onclose = () => {
         setStatus('disconnected')
         setPeerCursors([])
-        if (!closed) retry = setTimeout(connect, 2500)
+        if (!closed) retry = setTimeout(connect, 1500)
       }
     }
 
@@ -196,7 +188,6 @@ export function useSync(options: UseSyncOptions) {
 
   const broadcastPatch = useCallback(
     (jugada: Jugada, action?: string) => {
-      if (remoteLock.current) return
       send({ type: 'patch-jugada', jugada, action })
     },
     [send],
@@ -204,7 +195,6 @@ export function useSync(options: UseSyncOptions) {
 
   const broadcastJugadas = useCallback(
     (list: Jugada[], id: string, action?: string) => {
-      if (remoteLock.current) return
       send({ type: 'set-jugadas', jugadas: list, activeId: id, action })
     },
     [send],
@@ -212,7 +202,6 @@ export function useSync(options: UseSyncOptions) {
 
   const broadcastActive = useCallback(
     (id: string) => {
-      if (remoteLock.current) return
       send({ type: 'set-active', activeId: id })
     },
     [send],
@@ -220,7 +209,6 @@ export function useSync(options: UseSyncOptions) {
 
   const broadcastTeam = useCallback(
     (t: TeamMember[]) => {
-      if (remoteLock.current) return
       send({ type: 'set-team', team: t })
     },
     [send],
@@ -228,7 +216,6 @@ export function useSync(options: UseSyncOptions) {
 
   const broadcastCursor = useCallback(
     (activeId: string, x: number, y: number) => {
-      if (remoteLock.current) return
       send({
         type: 'cursor',
         activeId,
@@ -241,7 +228,6 @@ export function useSync(options: UseSyncOptions) {
 
   const broadcastViewport = useCallback(
     (jugadaId: string, viewport: Viewport) => {
-      if (remoteLock.current) return
       pendingViewport.current = { jugadaId, viewport }
       if (viewportTimer.current) return
       viewportTimer.current = setTimeout(() => {
@@ -250,7 +236,7 @@ export function useSync(options: UseSyncOptions) {
         if (!pending) return
         send({ type: 'viewport', jugadaId: pending.jugadaId, viewport: pending.viewport })
         pendingViewport.current = null
-      }, 120)
+      }, 50)
     },
     [send],
   )

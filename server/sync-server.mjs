@@ -115,19 +115,41 @@ function handleMessage(ws, raw) {
     case 'join': {
       const userName = String(msg.userName || 'user').slice(0, 32)
       const clientId = String(msg.clientId || crypto.randomUUID())
-      const activeId = msg.state?.activeId ?? room.activeId ?? null
+      const activeId = msg.activeId ?? msg.state?.activeId ?? room.activeId ?? null
       clients.set(ws, { clientId, userName, activeId })
       console.log(`+ ${userName} (${clientId.slice(0, 8)})`)
 
+      let bootstrapped = false
       if (room.jugadas.length === 0 && msg.state?.jugadas?.length) {
         room.jugadas = msg.state.jugadas
         room.activeId = msg.state.activeId ?? msg.state.jugadas[0]?.id ?? null
         room.team = msg.state.team ?? []
         touch(userName, 'subió estado inicial')
+        bootstrapped = true
       }
 
       sendInit(ws)
       broadcastAll({ type: 'presence', users: presence() })
+
+      if (bootstrapped) {
+        const at = room.lastEditAt ?? new Date().toISOString()
+        broadcastAll({
+          type: 'jugadas',
+          jugadas: room.jugadas,
+          activeId: room.activeId,
+          by: userName,
+          at,
+          action: 'sincronizó la sala',
+          clientId: '__server__',
+        })
+        broadcastAll({
+          type: 'team',
+          team: room.team,
+          by: userName,
+          at,
+          clientId: '__server__',
+        })
+      }
       break
     }
 

@@ -62,6 +62,7 @@ export type ClientMessage =
       type: 'join'
       clientId: string
       userName: string
+      activeId?: string
       state?: { jugadas: Jugada[]; activeId: string; team: TeamMember[] }
     }
   | { type: 'set-user'; userName: string }
