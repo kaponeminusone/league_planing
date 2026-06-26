@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "download": "node scripts/download-assets.mjs",
     "download:full": "node scripts/download-assets.mjs --full-splashes",
-    "sync-server": "node server/sync-server.mjs"
+    "sync-server": "node server/sync-server.mjs",
+    "start": "node server/sync-server.mjs"
   },
   "dependencies": {
     "react": "^19.1.0",

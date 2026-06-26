@@ -6,9 +6,33 @@
  */
 
 import { createServer } from 'http'
+import { existsSync } from 'fs'
+import { readFile, stat } from 'fs/promises'
+import path from 'path'
+import { fileURLToPath } from 'url'
 import { WebSocketServer } from 'ws'
 
-const PORT = Number(process.env.SYNC_PORT ?? 3001)
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const PORT = Number(process.env.PORT ?? process.env.SYNC_PORT ?? 3001)
+const HOST = process.env.HOST ?? '0.0.0.0'
+const DIST_PATH = process.env.DIST_PATH
+  ? path.resolve(process.env.DIST_PATH)
+  : null
+
+const MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.ico': 'image/x-icon',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+}
 
 /** @type {{ jugadas: object[]; activeId: string | null; team: object[]; lastEditBy: string | null; lastEditAt: string | null; lastEditAction: string | null }} */
 const room = {
@@ -255,10 +279,57 @@ function handleMessage(ws, raw) {
   }
 }
 
-const httpServer = createServer((_req, res) => {
-  res.writeHead(200, { 'Content-Type': 'text/plain' })
-  res.end('LoL Planning sync server — use WebSocket\n')
+const httpServer = createServer((req, res) => {
+  void handleHttp(req, res)
 })
+
+async function handleHttp(req, res) {
+  const url = new URL(req.url || '/', `http://${req.headers.host ?? 'localhost'}`)
+
+  if (url.pathname === '/health') {
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ ok: true, clients: clients.size }))
+    return
+  }
+
+  if (!DIST_PATH) {
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' })
+    res.end('LoL Planning sync server — use WebSocket\n')
+    return
+  }
+
+  let filePath = path.join(DIST_PATH, decodeURIComponent(url.pathname))
+  if (url.pathname === '/') filePath = path.join(DIST_PATH, 'index.html')
+
+  const resolved = path.resolve(filePath)
+  if (!resolved.startsWith(DIST_PATH)) {
+    res.writeHead(403)
+    res.end('Forbidden')
+    return
+  }
+
+  try {
+    let st = await stat(resolved)
+    if (st.isDirectory()) filePath = path.join(resolved, 'index.html')
+    else filePath = resolved
+
+    if (!existsSync(filePath)) throw new Error('missing')
+
+    const buf = await readFile(filePath)
+    const ext = path.extname(filePath).toLowerCase()
+    res.writeHead(200, { 'Content-Type': MIME[ext] ?? 'application/octet-stream' })
+    res.end(buf)
+  } catch {
+    try {
+      const buf = await readFile(path.join(DIST_PATH, 'index.html'))
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+      res.end(buf)
+    } catch {
+      res.writeHead(404)
+      res.end('Not found')
+    }
+  }
+}
 
 const wss = new WebSocketServer({ server: httpServer })
 
@@ -276,7 +347,12 @@ wss.on('connection', (ws) => {
   })
 })
 
-httpServer.listen(PORT, () => {
-  console.log(`Sync server  ws://localhost:${PORT}`)
-  console.log(`Conectados en la misma sala comparten jugadas en tiempo real.`)
+httpServer.listen(PORT, HOST, () => {
+  if (DIST_PATH) {
+    console.log(`App + sync  http://${HOST}:${PORT}`)
+    console.log(`WebSocket   ws://${HOST}:${PORT}`)
+  } else {
+    console.log(`Sync server  ws://${HOST}:${PORT}`)
+  }
+  console.log(`Sala compartida — jugadas en tiempo real.`)
 })

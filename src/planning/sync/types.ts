@@ -76,6 +76,10 @@ export type ClientMessage =
 export function getWsUrl(): string {
   const env = import.meta.env.VITE_WS_URL as string | undefined
   if (env) return env
+  if (import.meta.env.PROD) {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
+    return `${proto}//${location.host}`
+  }
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
   return `${proto}//${location.hostname}:3001`
 }

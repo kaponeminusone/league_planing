@@ -1,0 +1,20 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8080:10000"
+    environment:
+      PORT: 10000
+      DIST_PATH: /app/dist
+      HOST: 0.0.0.0
+
+  sync-only:
+    profiles: [sync]
+    build:
+      context: .
+      dockerfile: Dockerfile.sync
+    ports:
+      - "3001:10000"
+    environment:
+      PORT: 10000
+      HOST: 0.0.0.0
