@@ -11,7 +11,7 @@ import { readFile, stat } from 'fs/promises'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { WebSocketServer } from 'ws'
-import { loadLocalEnv } from '../scripts/load-local-env.mjs'
+import { loadLocalEnv } from './load-local-env.mjs'
 import {
   closeMongo,
   connectMongo,

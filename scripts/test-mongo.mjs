@@ -7,7 +7,7 @@
  */
 
 import { MongoClient, ServerApiVersion } from 'mongodb'
-import { loadLocalEnv, localEnvExists, localEnvPath } from './load-local-env.mjs'
+import { loadLocalEnv, localEnvExists, localEnvPath } from '../server/load-local-env.mjs'
 
 function maskUri(uri) {
   try {

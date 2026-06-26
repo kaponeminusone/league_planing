@@ -6,7 +6,7 @@
  */
 
 import { MongoClient, ServerApiVersion } from 'mongodb'
-import { loadLocalEnv, localEnvExists } from './load-local-env.mjs'
+import { loadLocalEnv, localEnvExists } from '../server/load-local-env.mjs'
 
 async function main() {
   loadLocalEnv()
