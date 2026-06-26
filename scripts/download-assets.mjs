@@ -28,7 +28,11 @@ const stats = { downloaded: 0, skipped: 0, failed: 0 }
 async function fetchJson(url) {
   const res = await fetch(url, { signal: AbortSignal.timeout(60_000) })
   if (!res.ok) throw new Error(`${res.status} ${url}`)
-  return res.json()
+  const text = await res.text()
+  if (text.trimStart().startsWith('<')) {
+    throw new Error(`Respuesta HTML en lugar de JSON: ${url}`)
+  }
+  return JSON.parse(text)
 }
 
 async function downloadFile(url, dest) {

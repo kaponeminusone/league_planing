@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:vercel": "npm run download && npm run build",
     "preview": "vite preview",
     "download": "node scripts/download-assets.mjs",
     "download:full": "node scripts/download-assets.mjs --full-splashes",

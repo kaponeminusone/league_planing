@@ -172,9 +172,16 @@ export default function App() {
 
   useEffect(() => {
     fetch('/data/manifest.json')
-      .then((r) => {
-        if (!r.ok) throw new Error('Manifest no encontrado. Ejecuta: npm run download')
-        return r.json()
+      .then(async (r) => {
+        const text = await r.text()
+        if (!r.ok || text.trimStart().startsWith('<')) {
+          throw new Error('Manifest no encontrado. Ejecuta: npm run download')
+        }
+        try {
+          return JSON.parse(text) as Manifest
+        } catch {
+          throw new Error('Manifest inválido. Ejecuta: npm run download')
+        }
       })
       .then(setManifest)
       .catch((e) => setError(e.message))
