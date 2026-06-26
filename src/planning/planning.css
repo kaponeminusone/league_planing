@@ -60,13 +60,13 @@
 /* ── Landmarks (playbook) ── */
 .landmarks {
   top: 6px;
-  left: 148px;
-  max-width: calc(100% - 160px);
+  left: 38px;
+  max-width: calc(100% - 140px);
   flex-wrap: wrap;
 }
 
 .team-panel--open + .landmarks {
-  left: calc(min(280px, 50vw) + 154px);
+  left: calc(min(280px, 50vw) + 10px);
 }
 
 .landmark {
@@ -138,16 +138,21 @@
   font-size: 0.7rem;
 }
 
-/* ── Sync panel (left) ── */
+/* ── Sync panel (right) ── */
 .sync-panel {
   top: 6px;
-  left: 6px;
+  right: 6px;
+  left: auto;
   flex-direction: column;
   align-items: stretch;
   gap: 6px;
   min-width: 132px;
-  max-width: 160px;
-  padding: 6px 8px;
+  max-width: 168px;
+  padding: 7px 9px;
+  background: rgba(8, 10, 14, 0.94);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.65);
 }
 
 .sync-panel__header {
@@ -255,7 +260,8 @@
 /* legacy sync-strip selectors kept for compatibility */
 .sync-strip {
   top: 6px;
-  left: 6px;
+  right: 6px;
+  left: auto;
 }
 
 .sync-strip__dot {
@@ -316,7 +322,7 @@
 
 /* ── Team panel (collapsible) ── */
 .team-panel {
-  top: 108px;
+  top: 6px;
   left: 6px;
   bottom: 52px;
   flex-direction: column;
