@@ -1,0 +1,26 @@
+{
+  "name": "league_planing",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "download": "node scripts/download-assets.mjs",
+    "download:full": "node scripts/download-assets.mjs --full-splashes",
+    "sync-server": "node server/sync-server.mjs"
+  },
+  "dependencies": {
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "ws": "^8.21.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
+    "@vitejs/plugin-react": "^4.5.2",
+    "typescript": "~6.0.2",
+    "vite": "^8.1.0"
+  }
+}
