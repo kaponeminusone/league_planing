@@ -30,14 +30,18 @@ export function ChampionPoolModal() {
   const open = poolModalOpen
 
   useEffect(() => {
-    if (open) {
-      initialTeamRef.current = team
-      setDraft(team)
-      setActiveMember(0)
-      setSearch('')
-      setRolePicker(null)
-    }
+    if (!open) return
+    setDraft(team)
+    setActiveMember((i) => Math.max(0, Math.min(i, Math.max(0, team.length - 1))))
   }, [open, team])
+
+  useEffect(() => {
+    if (!open) return
+    initialTeamRef.current = team
+    setActiveMember(0)
+    setSearch('')
+    setRolePicker(null)
+  }, [open])
 
   useEffect(() => {
     if (!rolePicker) return
