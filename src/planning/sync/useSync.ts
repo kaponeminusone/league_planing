@@ -44,11 +44,13 @@ export function useSync(options: UseSyncOptions) {
 
   const wsRef = useRef<WebSocket | null>(null)
   const clientIdRef = useRef(loadClientId())
+  const userNameRef = useRef(loadUserName())
   const bootstrappedRef = useRef(false)
   const activityTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const optionsRef = useRef(options)
   optionsRef.current = options
+  userNameRef.current = userName
 
   const send = useCallback((msg: ClientMessage) => {
     const ws = wsRef.current
@@ -57,10 +59,10 @@ export function useSync(options: UseSyncOptions) {
 
   const setUserName = useCallback(
     (name: string) => {
-      const trimmed = name.slice(0, 32) || 'user'
-      setUserNameState(trimmed)
-      saveUserName(trimmed)
-      send({ type: 'set-user', userName: trimmed })
+      const final = name.trim().slice(0, 32) || 'user'
+      setUserNameState(final)
+      saveUserName(final)
+      send({ type: 'set-user', userName: final })
     },
     [send],
   )
@@ -143,7 +145,7 @@ export function useSync(options: UseSyncOptions) {
         const msg: ClientMessage = {
           type: 'join',
           clientId: clientIdRef.current,
-          userName: loadUserName(),
+          userName: userNameRef.current,
           activeId: opts.activeId,
         }
         if (!bootstrappedRef.current) {

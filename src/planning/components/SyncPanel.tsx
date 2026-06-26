@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { usePlanning } from '../PlanningContext'
 import { peerColor } from '../sync/peerColors'
 
@@ -13,6 +13,20 @@ export function SyncPanel() {
     clientId,
   } = usePlanning()
 
+  const [draftName, setDraftName] = useState(userName)
+  const editingRef = useRef(false)
+
+  useEffect(() => {
+    if (!editingRef.current) setDraftName(userName)
+  }, [userName])
+
+  const commitName = () => {
+    editingRef.current = false
+    const next = draftName.trim().slice(0, 32) || 'user'
+    setDraftName(next)
+    if (next !== userName) setUserName(next)
+  }
+
   const dot =
     syncStatus === 'connected' ? 'ok' : syncStatus === 'connecting' ? 'wait' : 'off'
 
@@ -22,11 +36,26 @@ export function SyncPanel() {
         <span className={`sync-panel__dot sync-panel__dot--${dot}`} />
         <input
           className="sync-panel__user"
-          value={userName}
-          onChange={(e) => setUserName(e.target.value)}
+          value={draftName}
+          onFocus={() => {
+            editingRef.current = true
+          }}
+          onChange={(e) => setDraftName(e.target.value.slice(0, 32))}
+          onBlur={commitName}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              e.currentTarget.blur()
+            }
+            if (e.key === 'Escape') {
+              editingRef.current = false
+              setDraftName(userName)
+              e.currentTarget.blur()
+            }
+          }}
           placeholder="Tu nombre"
           maxLength={32}
-          title="Tu nombre"
+          title="Tu nombre (Enter para guardar)"
         />
       </div>
 
