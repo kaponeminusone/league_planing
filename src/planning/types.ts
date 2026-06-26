@@ -80,6 +80,19 @@ export function createId() {
   return crypto.randomUUID()
 }
 
+export function defaultViewport(): Viewport {
+  return { x: 0, y: 0, zoom: DEFAULT_ZOOM }
+}
+
+/** Viewport es local por cliente — no se sincroniza entre usuarios. */
+export function jugadaForSync(jugada: Jugada): Jugada {
+  return { ...jugada, viewport: defaultViewport() }
+}
+
+export function mergeRemoteJugada(local: Jugada | undefined, remote: Jugada): Jugada {
+  return { ...remote, viewport: local?.viewport ?? defaultViewport() }
+}
+
 export function createEmptyJugada(name = 'Nueva jugada'): Jugada {
   const now = new Date().toISOString()
   return {

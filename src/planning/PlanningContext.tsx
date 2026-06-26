@@ -15,6 +15,8 @@ import {
   createEmptyJugada,
   createId,
   defaultTeam,
+  jugadaForSync,
+  mergeRemoteJugada,
   normalizeTeam,
   sideForRole,
   type DrawingStroke,
@@ -185,14 +187,21 @@ export function PlanningProvider({
   const activeJugada = jugadas.find((j) => j.id === activeId) ?? jugadas[0]
 
   const onRemoteJugada = useCallback((jugada: Jugada) => {
-    setJugadas((prev) => replaceJugada(prev, jugada))
+    setJugadas((prev) => {
+      const local = prev.find((j) => j.id === jugada.id)
+      return replaceJugada(prev, mergeRemoteJugada(local, jugada))
+    })
     const stack = historyRef.current.get(jugada.id)
     if (stack) stack.future = []
     setHistoryTick((t) => t + 1)
   }, [])
 
   const onRemoteJugadas = useCallback((list: Jugada[], remoteActiveId: string | null) => {
-    setJugadas(persistJugadas(list))
+    setJugadas((prev) => {
+      const localById = new Map(prev.map((j) => [j.id, j]))
+      const merged = list.map((j) => mergeRemoteJugada(localById.get(j.id), j))
+      return persistJugadas(merged)
+    })
     if (remoteActiveId) {
       setActiveId(remoteActiveId)
       saveActiveJugadaId(remoteActiveId)
@@ -210,14 +219,6 @@ export function PlanningProvider({
     saveTeam(normalized)
   }, [])
 
-  const onRemoteViewport = useCallback((jugadaId: string, viewport: Viewport) => {
-    setJugadas((prev) => {
-      const j = prev.find((x) => x.id === jugadaId)
-      if (!j) return prev
-      return replaceJugada(prev, { ...j, viewport })
-    })
-  }, [])
-
   const sync = useSync({
     jugadas,
     activeId,
@@ -226,13 +227,12 @@ export function PlanningProvider({
     onRemoteJugadas,
     onRemoteActive,
     onRemoteTeam,
-    onRemoteViewport,
   })
 
   const flushPatch = useCallback(() => {
     const pending = pendingPatchRef.current
     if (!pending) return
-    sync.broadcastPatch(pending.jugada, pending.action)
+    sync.broadcastPatch(jugadaForSync(pending.jugada), pending.action)
     pendingPatchRef.current = null
     lastPatchSentAt.current = Date.now()
     patchTimer.current = null
@@ -388,15 +388,13 @@ export function PlanningProvider({
   const canRedo = activeHistory.future.length > 0
   void historyTick
 
-  const setViewport = useCallback(
-    (v: Viewport) => {
-      if (!activeJugada) return
-      const updated: Jugada = { ...activeJugada, viewport: v }
-      setJugadas((prev) => replaceJugada(prev, updated))
-      sync.broadcastViewport(activeJugada.id, v)
-    },
-    [activeJugada, sync],
-  )
+  const setViewport = useCallback((v: Viewport) => {
+    setJugadas((prev) => {
+      const current = prev.find((j) => j.id === activeIdRef.current)
+      if (!current) return prev
+      return replaceJugada(prev, { ...current, viewport: v })
+    })
+  }, [])
 
   const addMarker = useCallback(
     (m: Omit<MapMarker, 'id'>) => {
@@ -514,7 +512,7 @@ export function PlanningProvider({
     setJugadas(list)
     setActiveId(j.id)
     saveActiveJugadaId(j.id)
-    sync.broadcastJugadas(list, j.id, 'creó una jugada')
+    sync.broadcastJugadas(list.map(jugadaForSync), j.id, 'creó una jugada')
   }, [jugadas, sync])
 
   const renameJugada = useCallback(
@@ -532,7 +530,7 @@ export function PlanningProvider({
         setActiveId(nextId)
         saveActiveJugadaId(nextId)
       }
-      sync.broadcastJugadas(list, activeId === id ? nextId : activeId, 'eliminó una jugada')
+      sync.broadcastJugadas(list.map(jugadaForSync), activeId === id ? nextId : activeId, 'eliminó una jugada')
     },
     [jugadas, activeId, sync],
   )
@@ -549,7 +547,7 @@ export function PlanningProvider({
     setJugadas(list)
     setActiveId(copy.id)
     saveActiveJugadaId(copy.id)
-    sync.broadcastJugadas(list, copy.id, 'duplicó una jugada')
+    sync.broadcastJugadas(list.map(jugadaForSync), copy.id, 'duplicó una jugada')
   }, [activeJugada, jugadas, sync])
 
   const saveNow = useCallback(() => {

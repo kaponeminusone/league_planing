@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { Jugada, TeamMember, Viewport } from '../types'
+import type { Jugada, TeamMember } from '../types'
 import {
   getWsUrl,
   loadClientId,
@@ -20,7 +20,6 @@ interface UseSyncOptions {
   onRemoteJugadas: (jugadas: Jugada[], activeId: string | null) => void
   onRemoteActive: (activeId: string) => void
   onRemoteTeam: (team: TeamMember[]) => void
-  onRemoteViewport: (jugadaId: string, viewport: Viewport) => void
 }
 
 const CURSOR_STALE_MS = 12_000
@@ -47,8 +46,6 @@ export function useSync(options: UseSyncOptions) {
   const clientIdRef = useRef(loadClientId())
   const bootstrappedRef = useRef(false)
   const activityTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const viewportTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const pendingViewport = useRef<{ jugadaId: string; viewport: Viewport } | null>(null)
 
   const optionsRef = useRef(options)
   optionsRef.current = options
@@ -89,10 +86,6 @@ export function useSync(options: UseSyncOptions) {
         break
       case 'cursors':
         setPeerCursors(freshCursors(msg.cursors.filter((c) => c.clientId !== selfId)))
-        break
-      case 'viewport':
-        opts.onRemoteViewport(msg.jugadaId, msg.viewport)
-        setLiveActivity(`${msg.by} movió el mapa`)
         break
       case 'jugada':
         opts.onRemoteJugada(msg.jugada)
@@ -181,7 +174,6 @@ export function useSync(options: UseSyncOptions) {
     return () => {
       closed = true
       clearTimeout(retry)
-      if (viewportTimer.current) clearTimeout(viewportTimer.current)
       wsRef.current?.close()
     }
   }, [handleServerMessage])
@@ -226,21 +218,6 @@ export function useSync(options: UseSyncOptions) {
     [send],
   )
 
-  const broadcastViewport = useCallback(
-    (jugadaId: string, viewport: Viewport) => {
-      pendingViewport.current = { jugadaId, viewport }
-      if (viewportTimer.current) return
-      viewportTimer.current = setTimeout(() => {
-        viewportTimer.current = null
-        const pending = pendingViewport.current
-        if (!pending) return
-        send({ type: 'viewport', jugadaId: pending.jugadaId, viewport: pending.viewport })
-        pendingViewport.current = null
-      }, 50)
-    },
-    [send],
-  )
-
   return {
     status,
     userName,
@@ -256,6 +233,5 @@ export function useSync(options: UseSyncOptions) {
     broadcastActive,
     broadcastTeam,
     broadcastCursor,
-    broadcastViewport,
   }
 }
