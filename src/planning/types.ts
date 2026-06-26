@@ -3,8 +3,10 @@ export const MARKER_SIZE = 36
 export const MIN_ZOOM = 0.4
 export const MAX_ZOOM = 3
 export const DEFAULT_ZOOM = 1
+/** Zoom inicial al abrir / al detectar mapa HD (≈20%). */
+export const INITIAL_ZOOM = 0.2
 
-export type Tool = 'pan' | 'draw' | 'arrow' | 'place' | 'erase'
+export type Tool = 'pan' | 'draw' | 'arrow' | 'place' | 'erase' | 'text'
 
 export interface Viewport {
   x: number
@@ -24,11 +26,15 @@ export interface MapMarker {
   label: string
   position: MapPoint
   timerSeconds?: number
-  category: 'ping' | 'ward' | 'objective' | 'champion' | 'player' | 'other'
+  category: 'ping' | 'ward' | 'objective' | 'champion' | 'player' | 'enemy' | 'minion' | 'other'
   /** Jugador del pool de equipo */
   playerId?: string
   playerName?: string
   playerRole?: string
+  /** Slot del equipo enemigo (dock inferior) */
+  enemySlotId?: string
+  enemyLabel?: string
+  minionSide?: TeamSide
   championId?: string
   championName?: string
   authorId?: string
@@ -43,6 +49,18 @@ export interface DrawingStroke {
   authorId?: string
 }
 
+export interface MapTextBox {
+  id: string
+  /** Esquina superior izquierda normalizada 0–1 */
+  x: number
+  y: number
+  width: number
+  height: number
+  text: string
+  color: string
+  authorId?: string
+}
+
 export interface Jugada {
   id: string
   name: string
@@ -51,6 +69,7 @@ export interface Jugada {
   viewport: Viewport
   markers: MapMarker[]
   strokes: DrawingStroke[]
+  textBoxes: MapTextBox[]
 }
 
 export type TeamSide = 'blue' | 'red' | 'none'
@@ -70,6 +89,19 @@ export interface TeamMember {
   side: TeamSide
   pool: PoolEntry[]
 }
+
+export interface EnemySlot {
+  id: string
+  label: string
+  role: string
+  championId: string | null
+}
+
+export const ENEMY_TEAM_SIZE = 7
+export const ENEMY_SLOT_ROLES = ['Top', 'Jungle', 'Mid', 'ADC', 'Support', 'Sub', 'Sub'] as const
+
+export const MINION_BLUE_ICON = '/assets/minimap/minions/blue.webp'
+export const MINION_RED_ICON = '/assets/minimap/minions/red.webp'
 
 export interface QuickAsset {
   id: string
@@ -92,7 +124,8 @@ export function jugadaForSync(jugada: Jugada): Jugada {
 }
 
 export function mergeRemoteJugada(local: Jugada | undefined, remote: Jugada): Jugada {
-  return { ...remote, viewport: local?.viewport ?? defaultViewport() }
+  const merged = { ...remote, viewport: local?.viewport ?? defaultViewport() }
+  return normalizeJugada(merged)
 }
 
 export function createEmptyJugada(name = 'Nueva jugada'): Jugada {
@@ -105,7 +138,12 @@ export function createEmptyJugada(name = 'Nueva jugada'): Jugada {
     viewport: { x: 0, y: 0, zoom: DEFAULT_ZOOM },
     markers: [],
     strokes: [],
+    textBoxes: [],
   }
+}
+
+export function normalizeJugada(j: Jugada): Jugada {
+  return { ...j, textBoxes: j.textBoxes ?? [] }
 }
 
 export function defaultTeam(): TeamMember[] {
@@ -116,6 +154,33 @@ export function defaultTeam(): TeamMember[] {
     role: roles[i] ?? 'Sub',
     side: i < 5 ? ('blue' as TeamSide) : ('none' as TeamSide),
     pool: [],
+  }))
+}
+
+export function defaultEnemyTeam(): EnemySlot[] {
+  return ENEMY_SLOT_ROLES.map((role, i) => ({
+    id: createId(),
+    label: `Enemigo ${i + 1}`,
+    role,
+    championId: null,
+  }))
+}
+
+export function normalizeEnemyTeam(slots: EnemySlot[]): EnemySlot[] {
+  const normalized = [...slots]
+  while (normalized.length < ENEMY_TEAM_SIZE) {
+    const i = normalized.length
+    normalized.push({
+      id: createId(),
+      label: `Enemigo ${i + 1}`,
+      role: ENEMY_SLOT_ROLES[i] ?? 'Sub',
+      championId: null,
+    })
+  }
+  return normalized.slice(0, ENEMY_TEAM_SIZE).map((s, i) => ({
+    ...s,
+    role: ENEMY_SLOT_ROLES[i] ?? s.role,
+    label: s.label || `Enemigo ${i + 1}`,
   }))
 }
 

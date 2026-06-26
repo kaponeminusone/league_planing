@@ -1,10 +1,11 @@
-import type { DrawingStroke, Jugada, MapMarker, MapPoint } from './types'
+import type { DrawingStroke, Jugada, MapMarker, MapPoint, MapTextBox } from './types'
 
 export const MAX_HISTORY = 50
 
 export interface JugadaContentSnapshot {
   markers: MapMarker[]
   strokes: DrawingStroke[]
+  textBoxes: MapTextBox[]
 }
 
 export interface JugadaHistory {
@@ -19,6 +20,8 @@ export type PersonalUndoEntry =
   | { kind: 'remove-marker'; marker: MapMarker }
   | { kind: 'remove-stroke'; stroke: DrawingStroke }
   | { kind: 'move-marker'; id: string; from: MapPoint; to: MapPoint }
+  | { kind: 'add-text-box'; textBox: MapTextBox }
+  | { kind: 'remove-text-box'; textBox: MapTextBox }
 
 export interface PersonalHistory {
   undo: PersonalUndoEntry[]
@@ -67,6 +70,18 @@ export function applyPersonalEntry(
             : m,
         ),
       }
+    case 'add-text-box': {
+      const boxes = jugada.textBoxes ?? []
+      return forward
+        ? { textBoxes: [...boxes, entry.textBox] }
+        : { textBoxes: boxes.filter((t) => t.id !== entry.textBox.id) }
+    }
+    case 'remove-text-box': {
+      const boxes = jugada.textBoxes ?? []
+      return forward
+        ? { textBoxes: boxes.filter((t) => t.id !== entry.textBox.id) }
+        : { textBoxes: [...boxes, entry.textBox] }
+    }
     default:
       return {}
   }
@@ -76,6 +91,7 @@ export function snapshotContent(jugada: Jugada): JugadaContentSnapshot {
   return {
     markers: structuredClone(jugada.markers),
     strokes: structuredClone(jugada.strokes),
+    textBoxes: structuredClone(jugada.textBoxes ?? []),
   }
 }
 

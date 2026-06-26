@@ -7,6 +7,7 @@ import { MapMinimap } from './components/MapMinimap'
 import { Toolbar } from './components/Toolbar'
 import { SyncPanel } from './components/SyncPanel'
 import { ChampionPoolModal } from './components/ChampionPoolModal'
+import { EnemyPoolModal } from './components/EnemyPoolModal'
 import type { Manifest } from '../types'
 import './planning.css'
 
@@ -24,6 +25,7 @@ export function PlanningView({ manifest }: { manifest: Manifest }) {
           <AssetDock />
         </div>
         <ChampionPoolModal />
+        <EnemyPoolModal />
       </div>
     </PlanningProvider>
   )

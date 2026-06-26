@@ -1,7 +1,8 @@
-import type { Jugada, TeamMember, Viewport } from './types'
+import type { EnemySlot, Jugada, TeamMember, Viewport } from './types'
 
 const JUGADAS_KEY = 'lol-planning-jugadas'
 const TEAM_KEY = 'lol-planning-team'
+const ENEMY_TEAM_KEY = 'lol-planning-enemy-team'
 const ACTIVE_KEY = 'lol-planning-active-id'
 
 export function loadJugadas(): Jugada[] {
@@ -36,6 +37,19 @@ export function loadTeam(): TeamMember[] | null {
 
 export function saveTeam(team: TeamMember[]) {
   localStorage.setItem(TEAM_KEY, JSON.stringify(team))
+}
+
+export function loadEnemyTeam(): EnemySlot[] | null {
+  try {
+    const raw = localStorage.getItem(ENEMY_TEAM_KEY)
+    return raw ? (JSON.parse(raw) as EnemySlot[]) : null
+  } catch {
+    return null
+  }
+}
+
+export function saveEnemyTeam(slots: EnemySlot[]) {
+  localStorage.setItem(ENEMY_TEAM_KEY, JSON.stringify(slots))
 }
 
 export function clampViewport(v: Viewport): Viewport {

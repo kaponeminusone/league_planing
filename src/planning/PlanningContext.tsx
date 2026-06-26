@@ -14,21 +14,29 @@ import type { PresenceUser, PeerCursor, SyncStatus } from './sync/types'
 import {
   createEmptyJugada,
   createId,
+  defaultEnemyTeam,
   defaultTeam,
   jugadaForSync,
   mergeRemoteJugada,
+  MINION_BLUE_ICON,
+  MINION_RED_ICON,
+  normalizeEnemyTeam,
   normalizeTeam,
+  normalizeJugada,
   sideForRole,
   type DrawingStroke,
+  type EnemySlot,
   type Jugada,
   type MapMarker,
   type MapPoint,
+  type MapTextBox,
   type QuickAsset,
   type TeamMember,
   type Tool,
   type Viewport,
 } from './types'
 import { focusViewportOnPoint } from './markerUtils'
+import { buildPingWheelOptions, type PingWheelOption } from './pingWheel'
 import { loadClientId } from './sync/types'
 import {
   applyPersonalEntry,
@@ -39,9 +47,11 @@ import {
 } from './history'
 import {
   loadActiveJugadaId,
+  loadEnemyTeam,
   loadJugadas,
   loadTeam,
   saveActiveJugadaId,
+  saveEnemyTeam,
   saveJugadas,
   saveTeam,
 } from './storage'
@@ -51,6 +61,7 @@ interface PlanningContextValue {
   jugadas: Jugada[]
   activeJugada: Jugada
   team: TeamMember[]
+  enemyTeam: EnemySlot[]
   tool: Tool
   setTool: (t: Tool) => void
   selectedAsset: QuickAsset | null
@@ -59,6 +70,11 @@ interface PlanningContextValue {
   quickAssets: QuickAsset[]
   poolModalOpen: boolean
   setPoolModalOpen: (v: boolean) => void
+  enemyPoolModalOpen: boolean
+  setEnemyPoolModalOpen: (v: boolean) => void
+  enemyPoolActiveSlot: number
+  setEnemyPoolActiveSlot: (i: number) => void
+  updateEnemyTeam: (slots: EnemySlot[]) => void
   setViewport: (v: Viewport) => void
   mapDimensions: { w: number; h: number }
   setMapDimensions: (d: { w: number; h: number }) => void
@@ -69,9 +85,14 @@ interface PlanningContextValue {
   focusOnPlayer: (playerId: string) => void
   addMarker: (m: Omit<MapMarker, 'id'>) => void
   placePlayerMarker: (m: Omit<MapMarker, 'id' | 'category'>) => void
+  placeEnemyMarker: (m: Omit<MapMarker, 'id' | 'category' | 'enemySlotId'> & { enemySlotId: string }) => void
+  placeMinionMarker: (side: 'blue' | 'red', position: MapPoint) => void
   removeMarker: (id: string) => void
   addStroke: (s: Omit<DrawingStroke, 'id'>) => void
   removeStroke: (id: string) => void
+  addTextBox: (box: Omit<MapTextBox, 'id'>) => void
+  removeTextBox: (id: string) => void
+  pingWheelOptions: PingWheelOption[]
   undo: () => void
   redo: () => void
   canUndo: boolean
@@ -119,14 +140,6 @@ function buildQuickAssets(manifest: Manifest): QuickAsset[] {
       category: 'objective',
     })
   }
-  for (const c of manifest.champions.slice(0, 20)) {
-    assets.push({
-      id: `champ-${c.id}`,
-      label: c.name,
-      path: c.icon,
-      category: 'champion',
-    })
-  }
 
   return assets
 }
@@ -149,7 +162,7 @@ export function PlanningProvider({
 }) {
   const [jugadas, setJugadas] = useState<Jugada[]>(() => {
     const saved = loadJugadas()
-    return saved.length ? saved : [createEmptyJugada('Jugada 1')]
+    return saved.length ? saved.map(normalizeJugada) : [createEmptyJugada('Jugada 1')]
   })
   const [activeId, setActiveId] = useState(() => {
     const saved = loadActiveJugadaId()
@@ -164,9 +177,14 @@ export function PlanningProvider({
       side: m.side ?? sideForRole(m.role),
     }))
   })
+  const [enemyTeam, setEnemyTeam] = useState<EnemySlot[]>(() =>
+    normalizeEnemyTeam(loadEnemyTeam() ?? defaultEnemyTeam()),
+  )
   const [tool, setTool] = useState<Tool>('pan')
   const [selectedAsset, setSelectedAsset] = useState<QuickAsset | null>(null)
   const [poolModalOpen, setPoolModalOpen] = useState(false)
+  const [enemyPoolModalOpen, setEnemyPoolModalOpen] = useState(false)
+  const [enemyPoolActiveSlot, setEnemyPoolActiveSlot] = useState(0)
   const [drawColor, setDrawColor] = useState('#f0e6d2')
   const [timerSeconds, setTimerSeconds] = useState(180)
   const [selectedMarkerId, setSelectedMarkerId] = useState<string | null>(null)
@@ -183,6 +201,7 @@ export function PlanningProvider({
   activeIdRef.current = activeId
 
   const quickAssets = useMemo(() => buildQuickAssets(manifest), [manifest])
+  const pingWheelOptions = useMemo(() => buildPingWheelOptions(manifest), [manifest])
   const activeJugada = jugadas.find((j) => j.id === activeId) ?? jugadas[0]
 
   const onRemoteJugada = useCallback((jugada: Jugada) => {
@@ -195,7 +214,7 @@ export function PlanningProvider({
   const onRemoteJugadas = useCallback((list: Jugada[], remoteActiveId: string | null) => {
     setJugadas((prev) => {
       const localById = new Map(prev.map((j) => [j.id, j]))
-      const merged = list.map((j) => mergeRemoteJugada(localById.get(j.id), j))
+      const merged = list.map((j) => mergeRemoteJugada(localById.get(j.id), normalizeJugada(j)))
       return persistJugadas(merged)
     })
     if (remoteActiveId) {
@@ -424,6 +443,46 @@ export function PlanningProvider({
     [jugadas, patchContent, recordUndo],
   )
 
+  const placeEnemyMarker = useCallback(
+    (m: Omit<MapMarker, 'id' | 'category' | 'enemySlotId'> & { enemySlotId: string }) => {
+      const current = jugadas.find((j) => j.id === activeIdRef.current)
+      if (!current) return
+      const removed = current.markers.find((x) => x.enemySlotId === m.enemySlotId)
+      if (removed) recordUndo({ kind: 'remove-marker', marker: removed })
+      const marker: MapMarker = {
+        ...m,
+        id: createId(),
+        category: 'enemy',
+        label: `${m.enemyLabel ?? 'Enemigo'} — ${m.championName}`,
+        authorId: clientIdRef.current,
+      }
+      recordUndo({ kind: 'add-marker', marker })
+      patchContent((j) => {
+        const without = j.markers.filter((x) => x.enemySlotId !== m.enemySlotId)
+        return { markers: [...without, marker] }
+      }, `colocó enemigo (${m.championName})`)
+    },
+    [jugadas, patchContent, recordUndo],
+  )
+
+  const placeMinionMarker = useCallback(
+    (side: 'blue' | 'red', position: MapPoint) => {
+      const icon = side === 'blue' ? MINION_BLUE_ICON : MINION_RED_ICON
+      const marker: MapMarker = {
+        id: createId(),
+        assetPath: icon,
+        label: side === 'blue' ? 'Minion azul' : 'Minion rojo',
+        position,
+        category: 'minion',
+        minionSide: side,
+        authorId: clientIdRef.current,
+      }
+      recordUndo({ kind: 'add-marker', marker })
+      patchContent((j) => ({ markers: [...j.markers, marker] }), `colocó minion ${side}`)
+    },
+    [patchContent, recordUndo],
+  )
+
   const removeMarker = useCallback(
     (id: string) => {
       if (activeJugada) {
@@ -499,6 +558,29 @@ export function PlanningProvider({
     [activeJugada, patchContent, recordUndo],
   )
 
+  const addTextBox = useCallback(
+    (box: Omit<MapTextBox, 'id'>) => {
+      const textBox: MapTextBox = { ...box, id: createId(), authorId: clientIdRef.current }
+      recordUndo({ kind: 'add-text-box', textBox })
+      patchContent((j) => ({ textBoxes: [...(j.textBoxes ?? []), textBox] }), 'añadió texto')
+    },
+    [patchContent, recordUndo],
+  )
+
+  const removeTextBox = useCallback(
+    (id: string) => {
+      if (activeJugada) {
+        const removed = (activeJugada.textBoxes ?? []).find((t) => t.id === id)
+        if (removed) recordUndo({ kind: 'remove-text-box', textBox: removed })
+      }
+      patchContent(
+        (j) => ({ textBoxes: (j.textBoxes ?? []).filter((t) => t.id !== id) }),
+        'eliminó texto',
+      )
+    },
+    [activeJugada, patchContent, recordUndo],
+  )
+
   const switchJugada = useCallback(
     (id: string) => {
       setActiveId(id)
@@ -570,6 +652,12 @@ export function PlanningProvider({
     [sync],
   )
 
+  const updateEnemyTeam = useCallback((slots: EnemySlot[]) => {
+    const normalized = normalizeEnemyTeam(slots)
+    setEnemyTeam(normalized)
+    saveEnemyTeam(normalized)
+  }, [])
+
   useEffect(() => {
     if (tool === 'place' && !selectedAsset && quickAssets.length) {
       setSelectedAsset(quickAssets[0])
@@ -598,6 +686,7 @@ export function PlanningProvider({
     jugadas,
     activeJugada,
     team,
+    enemyTeam,
     tool,
     setTool,
     selectedAsset,
@@ -606,6 +695,11 @@ export function PlanningProvider({
     quickAssets,
     poolModalOpen,
     setPoolModalOpen,
+    enemyPoolModalOpen,
+    setEnemyPoolModalOpen,
+    enemyPoolActiveSlot,
+    setEnemyPoolActiveSlot,
+    updateEnemyTeam,
     setViewport,
     mapDimensions,
     setMapDimensions,
@@ -616,9 +710,14 @@ export function PlanningProvider({
     focusOnPlayer,
     addMarker,
     placePlayerMarker,
+    placeEnemyMarker,
+    placeMinionMarker,
     removeMarker,
     addStroke,
     removeStroke,
+    addTextBox,
+    removeTextBox,
+    pingWheelOptions,
     undo,
     redo,
     canUndo,

@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { clampMapZoom } from '../mapCoords'
 import { usePlanning } from '../PlanningContext'
-import { MAP_SRC, MAX_ZOOM, MIN_ZOOM } from '../types'
+import { MAP_SRC } from '../types'
 
 const MINI_W = 160
 const MINI_H = 160
+const ZOOM_DRAG_SENS = 0.0045
 
 export function MapMinimap() {
-  const { activeJugada, setViewport } = usePlanning()
+  const { activeJugada, setViewport, mapDimensions } = usePlanning()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [mapImg, setMapImg] = useState<HTMLImageElement | null>(null)
   const [dragging, setDragging] = useState(false)
+  const zoomDragRef = useRef<{ startX: number; startZoom: number } | null>(null)
 
   const viewport = activeJugada.viewport
 
@@ -18,6 +21,28 @@ export function MapMinimap() {
     img.src = MAP_SRC
     img.onload = () => setMapImg(img)
   }, [])
+
+  const getStage = () => canvasRef.current?.parentElement?.parentElement ?? null
+
+  const setZoomKeepingCenter = useCallback(
+    (newZoom: number) => {
+      const parent = getStage()
+      if (!parent || mapDimensions.w <= 1) return
+
+      const cw = parent.clientWidth
+      const ch = parent.clientHeight
+      const z = clampMapZoom(newZoom, cw, ch, mapDimensions.w, mapDimensions.h)
+      const centerMapX = (cw / 2 - viewport.x) / (mapDimensions.w * viewport.zoom)
+      const centerMapY = (ch / 2 - viewport.y) / (mapDimensions.h * viewport.zoom)
+
+      setViewport({
+        zoom: z,
+        x: cw / 2 - centerMapX * mapDimensions.w * z,
+        y: ch / 2 - centerMapY * mapDimensions.h * z,
+      })
+    },
+    [mapDimensions, setViewport, viewport.x, viewport.y, viewport.zoom],
+  )
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current
@@ -34,7 +59,7 @@ export function MapMinimap() {
 
     ctx.drawImage(mapImg, ox, oy, dw, dh)
 
-    const parent = canvas.parentElement?.parentElement
+    const parent = getStage()
     if (!parent) return
     const cw = parent.clientWidth
     const ch = parent.clientHeight
@@ -59,7 +84,7 @@ export function MapMinimap() {
 
   const jumpTo = (clientX: number, clientY: number) => {
     const canvas = canvasRef.current
-    const parent = canvas?.parentElement?.parentElement
+    const parent = getStage()
     if (!canvas || !mapImg || !parent) return
 
     const rect = canvas.getBoundingClientRect()
@@ -88,13 +113,33 @@ export function MapMinimap() {
   const onWheel = (e: React.WheelEvent) => {
     e.preventDefault()
     e.stopPropagation()
+    if (!mapImg || mapDimensions.w <= 1) return
     const factor = e.deltaY > 0 ? 0.85 : 1.15
-    const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, viewport.zoom * factor))
-    setViewport({ ...viewport, zoom: newZoom })
+    setZoomKeepingCenter(viewport.zoom * factor)
+  }
+
+  const onZoomPointerDown = (e: React.PointerEvent<HTMLSpanElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    zoomDragRef.current = { startX: e.clientX, startZoom: viewport.zoom }
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }
+
+  const onZoomPointerMove = (e: React.PointerEvent<HTMLSpanElement>) => {
+    if (!zoomDragRef.current) return
+    e.preventDefault()
+    const dx = e.clientX - zoomDragRef.current.startX
+    setZoomKeepingCenter(zoomDragRef.current.startZoom + dx * ZOOM_DRAG_SENS)
+  }
+
+  const onZoomPointerUp = (e: React.PointerEvent<HTMLSpanElement>) => {
+    if (!zoomDragRef.current) return
+    zoomDragRef.current = null
+    e.currentTarget.releasePointerCapture(e.pointerId)
   }
 
   return (
-    <div className="map-minimap">
+    <div className="map-minimap" onWheel={onWheel}>
       <canvas
         ref={canvasRef}
         width={MINI_W}
@@ -109,7 +154,14 @@ export function MapMinimap() {
         onPointerLeave={() => setDragging(false)}
         onWheel={onWheel}
       />
-      <span className="map-minimap__zoom" aria-hidden>
+      <span
+        className="map-minimap__zoom"
+        aria-hidden
+        onPointerDown={onZoomPointerDown}
+        onPointerMove={onZoomPointerMove}
+        onPointerUp={onZoomPointerUp}
+        onPointerCancel={onZoomPointerUp}
+      >
         {Math.round(viewport.zoom * 100)}%
       </span>
     </div>

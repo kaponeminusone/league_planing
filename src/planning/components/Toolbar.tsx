@@ -7,7 +7,8 @@ const TOOLS: { id: Tool; label: string; icon: string }[] = [
   { id: 'draw', label: 'Lápiz', icon: '✎' },
   { id: 'arrow', label: 'Flecha', icon: '➜' },
   { id: 'place', label: 'Colocar', icon: '⊕' },
-  { id: 'erase', label: 'Borrar', icon: '✕' },
+  { id: 'text', label: 'Texto', icon: 'T' },
+  { id: 'erase', label: 'Borrador (clic o arrastra)', icon: '◯' },
 ]
 
 export function Toolbar() {

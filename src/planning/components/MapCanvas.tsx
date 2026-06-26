@@ -1,15 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { fitMapViewport, mapToScreen, screenToMap } from '../mapCoords'
+import {
+  clampMapZoom,
+  initialMapViewport,
+  mapToScreen,
+  screenToMap,
+  viewportNeedsInitialFit,
+} from '../mapCoords'
 import { hitMarker, parseTimerInput } from '../markerUtils'
+import { findStrokeAt } from '../strokeUtils'
+import { findTextBoxAt, MIN_TEXT_BOX_NORM, normalizeTextRect } from '../textUtils'
+import { pickPingWheelSegment } from '../pingWheel'
 import { usePlanning } from '../PlanningContext'
 import { PeerSparks } from './PeerSparks'
-import { decodePlayerDrag, PLAYER_DRAG_MIME } from '../drag'
+import { PingWheel } from './PingWheel'
+import { decodeEnemyDrag, decodeMinionDrag, decodePlayerDrag, acceptsMapDrag, ENEMY_DRAG_MIME, MINION_DRAG_MIME, PLAYER_DRAG_MIME } from '../drag'
 import {
-  DEFAULT_ZOOM,
   MAP_SRC,
   MARKER_SIZE,
-  MAX_ZOOM,
-  MIN_ZOOM,
   type MapPoint,
   type Viewport,
 } from '../types'
@@ -34,9 +41,14 @@ export function MapCanvas() {
     moveMarker,
     addMarker,
     placePlayerMarker,
+    placeEnemyMarker,
+    placeMinionMarker,
     removeMarker,
     addStroke,
     removeStroke,
+    addTextBox,
+    removeTextBox,
+    pingWheelOptions,
     recordMoveUndo,
     selectedAsset,
     drawColor,
@@ -48,6 +60,7 @@ export function MapCanvas() {
   const containerRef = useRef<HTMLDivElement>(null)
   const trashRef = useRef<HTMLDivElement>(null)
   const fittedRef = useRef(false)
+  const lastFittedMapRef = useRef<{ w: number; h: number } | null>(null)
   const cursorThrottle = useRef(0)
   const [mapSize, setMapSize] = useState({ w: 1, h: 1 })
   const [panning, setPanning] = useState(false)
@@ -63,17 +76,40 @@ export function MapCanvas() {
   const [trashHot, setTrashHot] = useState(false)
   const [timerEditId, setTimerEditId] = useState<string | null>(null)
   const [timerEditValue, setTimerEditValue] = useState('')
+  const [erasePreview, setErasePreview] = useState<{ x: number; y: number } | null>(null)
+  const [pingWheel, setPingWheel] = useState<{
+    centerX: number
+    centerY: number
+    placePosition: MapPoint
+    selectedIndex: number | null
+  } | null>(null)
+  const [textRectDraft, setTextRectDraft] = useState<{ from: MapPoint; to: MapPoint } | null>(null)
+  const [textEditor, setTextEditor] = useState<{
+    x: number
+    y: number
+    width: number
+    height: number
+    value: string
+  } | null>(null)
   const panOrigin = useRef({ x: 0, y: 0, vx: 0, vy: 0 })
   const strokeDragging = useRef(false)
+  const erasingRef = useRef(false)
+  const textRectDragging = useRef(false)
 
   const viewport = activeJugada.viewport
+  const viewportRef = useRef(viewport)
+  viewportRef.current = viewport
   const showPlaceGhost = tool === 'place' && selectedAsset !== null && !dragOver
-  const isDrawingTool = tool === 'draw' || tool === 'arrow'
+  const isDrawingTool = tool === 'draw' || tool === 'arrow' || tool === 'text'
   const isStrokeDragging = strokeDraft !== null
 
   useEffect(() => {
     if (!showPlaceGhost) setPlacePreview(null)
   }, [showPlaceGhost, selectedAsset?.id])
+
+  useEffect(() => {
+    if (tool !== 'erase') setErasePreview(null)
+  }, [tool])
 
   useEffect(() => {
     if (tool !== 'draw' && tool !== 'arrow') {
@@ -83,23 +119,48 @@ export function MapCanvas() {
   }, [tool])
 
   useEffect(() => {
+    if (tool !== 'text') {
+      setTextRectDraft(null)
+      textRectDragging.current = false
+      setTextEditor(null)
+    }
+  }, [tool])
+
+  const applyInitialViewportIfNeeded = useCallback(
+    (mapW: number, mapH: number) => {
+      const el = containerRef.current
+      if (!el || mapW <= 1 || mapH <= 1) return false
+
+      const cw = el.clientWidth
+      const ch = el.clientHeight
+      if (cw < 64 || ch < 64) return false
+
+      const mapChanged =
+        lastFittedMapRef.current?.w !== mapW || lastFittedMapRef.current?.h !== mapH
+
+      const v = viewportRef.current
+      if (fittedRef.current && !mapChanged && !viewportNeedsInitialFit(v, cw, ch, mapW, mapH)) {
+        return false
+      }
+
+      setViewport(initialMapViewport(cw, ch, mapW, mapH))
+      lastFittedMapRef.current = { w: mapW, h: mapH }
+      fittedRef.current = true
+      return true
+    },
+    [setViewport],
+  )
+
+  useEffect(() => {
     const img = new Image()
     img.src = MAP_SRC
     img.onload = () => {
       const dims = { w: img.naturalWidth, h: img.naturalHeight }
       setMapSize(dims)
       setMapDimensions(dims)
-      const el = containerRef.current
-      if (el && !fittedRef.current) {
-        fittedRef.current = true
-        const v = activeJugada.viewport
-        const isFresh = v.x === 0 && v.y === 0 && v.zoom === DEFAULT_ZOOM
-        if (isFresh) {
-          setViewport(fitMapViewport(el.clientWidth, el.clientHeight, dims.w, dims.h))
-        }
-      }
+      requestAnimationFrame(() => applyInitialViewportIfNeeded(dims.w, dims.h))
     }
-  }, [])
+  }, [setMapDimensions, applyInitialViewportIfNeeded])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -217,11 +278,19 @@ export function MapCanvas() {
   const onWheel = useCallback(
     (e: React.WheelEvent) => {
       e.preventDefault()
+      const el = containerRef.current
+      if (!el || mapSize.w <= 1) return
       const rect = getRect()
       const mx = e.clientX - rect.left
       const my = e.clientY - rect.top
       const factor = e.deltaY > 0 ? 0.9 : 1.1
-      const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, viewport.zoom * factor))
+      const newZoom = clampMapZoom(
+        viewport.zoom * factor,
+        el.clientWidth,
+        el.clientHeight,
+        mapSize.w,
+        mapSize.h,
+      )
       const scale = newZoom / viewport.zoom
       applyViewport({
         zoom: newZoom,
@@ -229,7 +298,7 @@ export function MapCanvas() {
         y: my - (my - viewport.y) * scale,
       })
     },
-    [viewport, applyViewport],
+    [viewport, applyViewport, mapSize],
   )
 
   const updatePlacePreview = (clientX: number, clientY: number) => {
@@ -237,6 +306,96 @@ export function MapCanvas() {
     const rect = getRect()
     setPlacePreview({ x: clientX - rect.left, y: clientY - rect.top })
   }
+
+  const updateErasePreview = (clientX: number, clientY: number) => {
+    if (tool !== 'erase') return
+    const rect = getRect()
+    setErasePreview({ x: clientX - rect.left, y: clientY - rect.top })
+  }
+
+  const tryEraseAt = useCallback(
+    (clientX: number, clientY: number) => {
+      const rect = getRect()
+      const textHit = findTextBoxAt(
+        activeJugada.textBoxes ?? [],
+        clientX,
+        clientY,
+        viewport,
+        mapSize.w,
+        mapSize.h,
+        rect,
+      )
+      if (textHit) {
+        removeTextBox(textHit.id)
+        return
+      }
+      const stroke = findStrokeAt(
+        activeJugada.strokes,
+        clientX,
+        clientY,
+        viewport,
+        mapSize.w,
+        mapSize.h,
+        rect,
+      )
+      if (stroke) removeStroke(stroke.id)
+    },
+    [activeJugada.strokes, activeJugada.textBoxes, viewport, mapSize, removeStroke, removeTextBox],
+  )
+
+  const updatePingWheelSelection = (clientX: number, clientY: number) => {
+    setPingWheel((prev) => {
+      if (!prev) return prev
+      const rect = getRect()
+      const dx = clientX - rect.left - prev.centerX
+      const dy = clientY - rect.top - prev.centerY
+      return { ...prev, selectedIndex: pickPingWheelSegment(dx, dy) }
+    })
+  }
+
+  const commitPingWheel = useCallback(
+    (wheel: NonNullable<typeof pingWheel>) => {
+      if (wheel.selectedIndex === null) return
+      const opt = pingWheelOptions[wheel.selectedIndex]
+      if (!opt?.path) return
+      addMarker({
+        assetPath: opt.path,
+        label: opt.label,
+        position: wheel.placePosition,
+        category: 'ping',
+      })
+    },
+    [addMarker, pingWheelOptions],
+  )
+
+  const commitTextEditor = useCallback(() => {
+    setTextEditor((prev) => {
+      if (!prev) return null
+      const text = prev.value.trim()
+      if (text) {
+        addTextBox({
+          x: prev.x,
+          y: prev.y,
+          width: prev.width,
+          height: prev.height,
+          text,
+          color: drawColor,
+        })
+      }
+      return null
+    })
+  }, [addTextBox, drawColor])
+
+  const textBoxScreenStyle = useCallback(
+    (x: number, y: number, width: number, height: number) => {
+      const topLeft = mapToScreen({ x, y }, viewport, mapSize.w, mapSize.h)
+      const screenW = width * mapSize.w * viewport.zoom
+      const screenH = height * mapSize.h * viewport.zoom
+      const fontSize = Math.max(10, Math.min(screenH * 0.38, screenW * 0.22))
+      return { left: topLeft.x, top: topLeft.y, width: screenW, height: screenH, fontSize }
+    },
+    [viewport, mapSize],
+  )
 
   const updateStrokeDraft = (pt: MapPoint) => {
     setStrokeDraft((prev) => {
@@ -251,10 +410,16 @@ export function MapCanvas() {
   }
 
   const onPointerDown = (e: React.PointerEvent) => {
+    if (textEditor) return
+
     const hit = findMarkerAt(e.clientX, e.clientY)
 
     if (e.button === 2) {
       e.preventDefault()
+      if (pingWheel) {
+        setPingWheel(null)
+        return
+      }
       if (hit) {
         removeMarker(hit.id)
       } else {
@@ -265,9 +430,25 @@ export function MapCanvas() {
     if (e.button !== 0) return
     const pt = toMap(e.clientX, e.clientY)
 
+    if ((e.ctrlKey || e.altKey) && pingWheelOptions.length > 0) {
+      const rect = getRect()
+      setPingWheel({
+        centerX: e.clientX - rect.left,
+        centerY: e.clientY - rect.top,
+        placePosition: pt,
+        selectedIndex: null,
+      })
+      capturePointer(e)
+      return
+    }
+
+    if (pingWheel) return
+
     if (hit && !isDrawingTool) {
       if (tool === 'erase') {
         removeMarker(hit.id)
+        erasingRef.current = true
+        capturePointer(e)
         return
       }
       setSelectedMarkerId(hit.id)
@@ -307,6 +488,13 @@ export function MapCanvas() {
       return
     }
 
+    if (tool === 'text') {
+      textRectDragging.current = true
+      setTextRectDraft({ from: pt, to: pt })
+      capturePointer(e)
+      return
+    }
+
     if (tool === 'place' && selectedAsset) {
       addMarker({
         assetPath: selectedAsset.path,
@@ -322,20 +510,22 @@ export function MapCanvas() {
     }
 
     if (tool === 'erase') {
-      const strokeHit = activeJugada.strokes.find((s) =>
-        s.points.some((p) => {
-          const sc = mapToScreen(p, viewport, mapSize.w, mapSize.h)
-          const rect = getRect()
-          return Math.hypot(e.clientX - rect.left - sc.x, e.clientY - rect.top - sc.y) < 12
-        }),
-      )
-      if (strokeHit) removeStroke(strokeHit.id)
+      tryEraseAt(e.clientX, e.clientY)
+      erasingRef.current = true
+      capturePointer(e)
+      return
     }
   }
 
   const onPointerMove = (e: React.PointerEvent) => {
     sendCursorPresence(e.clientX, e.clientY)
     updatePlacePreview(e.clientX, e.clientY)
+    updateErasePreview(e.clientX, e.clientY)
+
+    if (pingWheel) {
+      updatePingWheelSelection(e.clientX, e.clientY)
+      return
+    }
 
     if (markerDrag) {
       const pt = toMap(e.clientX, e.clientY)
@@ -360,10 +550,25 @@ export function MapCanvas() {
 
     if (strokeDragging.current && strokeDraft) {
       updateStrokeDraft(toMap(e.clientX, e.clientY))
+      return
+    }
+
+    if (textRectDragging.current && textRectDraft) {
+      setTextRectDraft((prev) => (prev ? { ...prev, to: toMap(e.clientX, e.clientY) } : null))
+      return
+    }
+
+    if (erasingRef.current && tool === 'erase') {
+      tryEraseAt(e.clientX, e.clientY)
     }
   }
 
   const onPointerUp = (e: React.PointerEvent) => {
+    if (pingWheel) {
+      commitPingWheel(pingWheel)
+      setPingWheel(null)
+      return
+    }
     if (markerDrag) {
       if (trashHot || isOverTrash(e.clientX, e.clientY)) {
         removeMarker(markerDrag.id)
@@ -390,15 +595,50 @@ export function MapCanvas() {
     }
     if (strokeDragging.current) {
       releaseStrokeAt(toMap(e.clientX, e.clientY))
+      return
+    }
+    if (textRectDragging.current && textRectDraft) {
+      const box = normalizeTextRect(textRectDraft.from, textRectDraft.to)
+      if (box.width >= MIN_TEXT_BOX_NORM && box.height >= MIN_TEXT_BOX_NORM) {
+        setTextEditor({ ...box, value: '' })
+      }
+      setTextRectDraft(null)
+      textRectDragging.current = false
+      return
+    }
+    if (erasingRef.current) {
+      erasingRef.current = false
     }
   }
 
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault()
     setDragOver(false)
+    const pt = toMap(e.clientX, e.clientY)
+
+    const enemyPayload = decodeEnemyDrag(e.dataTransfer.getData(ENEMY_DRAG_MIME))
+    if (enemyPayload) {
+      placeEnemyMarker({
+        assetPath: enemyPayload.championIcon,
+        label: `${enemyPayload.slotLabel} — ${enemyPayload.championName}`,
+        position: pt,
+        enemySlotId: enemyPayload.slotId,
+        enemyLabel: enemyPayload.slotLabel,
+        playerRole: enemyPayload.memberRole,
+        championId: enemyPayload.championId,
+        championName: enemyPayload.championName,
+      })
+      return
+    }
+
+    const minionPayload = decodeMinionDrag(e.dataTransfer.getData(MINION_DRAG_MIME))
+    if (minionPayload) {
+      placeMinionMarker(minionPayload.side, pt)
+      return
+    }
+
     const payload = decodePlayerDrag(e.dataTransfer.getData(PLAYER_DRAG_MIME))
     if (!payload) return
-    const pt = toMap(e.clientX, e.clientY)
     placePlayerMarker({
       assetPath: payload.championIcon,
       label: `${payload.memberName} — ${payload.championName}`,
@@ -412,7 +652,7 @@ export function MapCanvas() {
   }
 
   const onDragOver = (e: React.DragEvent) => {
-    if (!e.dataTransfer.types.includes(PLAYER_DRAG_MIME)) return
+    if (!acceptsMapDrag(e.dataTransfer.types)) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'copy'
     setDragOver(true)
@@ -422,8 +662,15 @@ export function MapCanvas() {
 
   const onPointerLeave = () => {
     setPlacePreview(null)
+    setErasePreview(null)
+    if (pingWheel) setPingWheel(null)
     if (panning) setPanning(false)
     if (strokeDragging.current) cancelStroke()
+    if (textRectDragging.current) {
+      setTextRectDraft(null)
+      textRectDragging.current = false
+    }
+    if (erasingRef.current) erasingRef.current = false
     if (markerDrag) {
       setMarkerDrag(null)
       setTrashHot(false)
@@ -441,18 +688,23 @@ export function MapCanvas() {
         ? panning
           ? 'grabbing'
           : 'grab'
-        : tool === 'draw' || tool === 'arrow'
-          ? isStrokeDragging
-            ? 'none'
+        : tool === 'draw' || tool === 'arrow' || tool === 'text'
+          ? isStrokeDragging || textRectDragging.current
+            ? 'crosshair'
             : 'crosshair'
           : tool === 'erase'
-            ? 'not-allowed'
-            : 'crosshair'
+            ? 'none'
+            : pingWheel
+              ? 'none'
+              : 'crosshair'
+
+  const isEraseTool = tool === 'erase'
+  const textRectPreview = textRectDraft ? normalizeTextRect(textRectDraft.from, textRectDraft.to) : null
 
   return (
     <div
       ref={containerRef}
-      className={`map-canvas ${dragOver ? 'map-canvas--drop' : ''} ${isDrawingTool ? 'map-canvas--draw-tool' : ''}`}
+      className={`map-canvas ${dragOver ? 'map-canvas--drop' : ''} ${isDrawingTool ? 'map-canvas--draw-tool' : ''} ${isEraseTool ? 'map-canvas--erase-tool' : ''}`}
       style={{ cursor: resolvedCursor }}
       onWheel={onWheel}
       onPointerDown={onPointerDown}
@@ -548,15 +800,18 @@ export function MapCanvas() {
         {activeJugada.markers.map((m) => {
           const pos = mapToScreen(m.position, viewport, mapSize.w, mapSize.h)
           const isPlayer = m.category === 'player' && m.playerName
+          const isEnemy = m.category === 'enemy'
+          const isMinion = m.category === 'minion'
+          const size = isMinion ? 26 : MARKER_SIZE
           const isSelected = selectedMarkerId === m.id
           return (
             <div
               key={m.id}
-              className={`map-marker ${isPlayer ? 'map-marker--player' : ''} ${isSelected ? 'map-marker--selected' : ''}`}
+              className={`map-marker ${isPlayer ? 'map-marker--player' : ''} ${isEnemy ? 'map-marker--enemy' : ''} ${isMinion ? 'map-marker--minion' : ''} ${isMinion && m.minionSide === 'red' ? 'map-marker--minion-red' : ''} ${isSelected ? 'map-marker--selected' : ''}`}
               style={{
-                left: pos.x - MARKER_SIZE / 2,
-                top: pos.y - (isPlayer ? MARKER_SIZE / 2 + 6 : MARKER_SIZE / 2),
-                width: MARKER_SIZE,
+                left: pos.x - size / 2,
+                top: pos.y - (isPlayer || isEnemy ? size / 2 + 6 : size / 2),
+                width: size,
               }}
               title={m.label}
               onDoubleClick={(e) => {
@@ -569,12 +824,19 @@ export function MapCanvas() {
                 removeMarker(m.id)
               }}
             >
-              {isPlayer && m.playerRole && (
-                <span className="map-marker__role">{m.playerRole}</span>
+              {(isPlayer || isEnemy) && m.playerRole && (
+                <span className={`map-marker__role ${isEnemy ? 'map-marker__role--enemy' : ''}`}>
+                  {m.playerRole}
+                </span>
               )}
               <img src={m.assetPath} alt={m.label} draggable={false} />
               {isPlayer && (
                 <span className="map-marker__player">{m.playerName}</span>
+              )}
+              {isEnemy && (
+                <span className="map-marker__player map-marker__player--enemy">
+                  {m.enemyLabel ?? m.championName}
+                </span>
               )}
               {m.timerSeconds !== undefined &&
                 (timerEditId === m.id ? (
@@ -615,7 +877,86 @@ export function MapCanvas() {
             )}
           </div>
         )}
+        {(activeJugada.textBoxes ?? []).map((tb) => {
+          const style = textBoxScreenStyle(tb.x, tb.y, tb.width, tb.height)
+          return (
+            <div
+              key={tb.id}
+              className="map-text-box"
+              style={{ ...style, color: tb.color, fontSize: style.fontSize }}
+            >
+              {tb.text}
+            </div>
+          )
+        })}
+        {textRectPreview && (
+          <div
+            className="map-text-box map-text-box--preview"
+            style={{
+              ...textBoxScreenStyle(
+                textRectPreview.x,
+                textRectPreview.y,
+                textRectPreview.width,
+                textRectPreview.height,
+              ),
+              color: drawColor,
+            }}
+            aria-hidden
+          />
+        )}
+        {textEditor && (
+          <div
+            className="map-text-box map-text-box--editor"
+            style={{
+              ...textBoxScreenStyle(textEditor.x, textEditor.y, textEditor.width, textEditor.height),
+              color: drawColor,
+              fontSize: textBoxScreenStyle(
+                textEditor.x,
+                textEditor.y,
+                textEditor.width,
+                textEditor.height,
+              ).fontSize,
+            }}
+          >
+            <textarea
+              className="map-text-box__input"
+              value={textEditor.value}
+              autoFocus
+              placeholder="Escribe aquí…"
+              onPointerDown={(e) => e.stopPropagation()}
+              onChange={(e) =>
+                setTextEditor((prev) => (prev ? { ...prev, value: e.target.value } : null))
+              }
+              onKeyDown={(e) => {
+                e.stopPropagation()
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  commitTextEditor()
+                }
+                if (e.key === 'Escape') setTextEditor(null)
+              }}
+              onBlur={commitTextEditor}
+            />
+          </div>
+        )}
       </div>
+
+      {pingWheel && pingWheelOptions.length > 0 && (
+        <PingWheel
+          centerX={pingWheel.centerX}
+          centerY={pingWheel.centerY}
+          options={pingWheelOptions}
+          selectedIndex={pingWheel.selectedIndex}
+        />
+      )}
+
+      {isEraseTool && erasePreview && (
+        <div
+          className="map-eraser-preview"
+          style={{ left: erasePreview.x, top: erasePreview.y }}
+          aria-hidden
+        />
+      )}
 
       <PeerSparks />
 

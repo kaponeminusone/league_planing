@@ -845,6 +845,144 @@
   pointer-events: none;
 }
 
+.asset-dock__group--enemy {
+  align-items: center;
+}
+
+.asset-dock__tag--enemy {
+  color: #ff8a9a;
+}
+
+.asset-dock__enemy {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  padding: 2px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.asset-dock__enemy--empty {
+  opacity: 0.72;
+}
+
+.asset-dock__enemy--filled {
+  outline: 2px solid rgba(232, 64, 87, 0.75);
+  background: rgba(232, 64, 87, 0.12);
+}
+
+.asset-dock__enemy:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.asset-dock__enemy img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+.asset-dock__enemy-role {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  font-size: 0.45rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 1px 2px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.72);
+  color: #ffb3bc;
+  pointer-events: none;
+}
+
+.asset-dock__gear {
+  width: 24px;
+  height: 30px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  font-size: 0.85rem;
+}
+
+.asset-dock__gear:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
+.asset-dock__minion {
+  width: 28px;
+  height: 28px;
+  padding: 2px;
+  border: none;
+  border-radius: 50%;
+  cursor: grab;
+  flex-shrink: 0;
+  background: transparent;
+}
+
+.asset-dock__minion--blue {
+  outline: 1px solid rgba(94, 179, 255, 0.55);
+}
+
+.asset-dock__minion--red {
+  outline: 1px solid rgba(255, 107, 125, 0.55);
+}
+
+.asset-dock__minion img {
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.pool-slot--enemy.pool-slot--active {
+  outline-color: #e84057;
+}
+
+.pool-slot__icon-wrap--enemy {
+  outline: 2px solid rgba(232, 64, 87, 0.45);
+}
+
+.pool-slot__champ-icon {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.pool-slot__name--static {
+  border: none;
+  background: transparent;
+  padding: 0;
+  pointer-events: none;
+}
+
+.pool-champ--enemy.pool-champ--selected {
+  outline-color: #e84057;
+}
+
+.pool-modal__clear-champ {
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.pool-modal__clear-champ:hover {
+  background: rgba(232, 64, 87, 0.2);
+}
+
 /* ── Map canvas ── */
 .map-canvas {
   width: 100%;
@@ -971,6 +1109,175 @@
   pointer-events: none;
 }
 
+.map-canvas--erase-tool .map-marker {
+  pointer-events: auto;
+}
+
+.map-eraser-preview {
+  position: absolute;
+  width: 32px;
+  height: 32px;
+  margin: -16px 0 0 -16px;
+  border: 2px solid rgba(248, 113, 113, 0.9);
+  border-radius: 50%;
+  background: rgba(248, 113, 113, 0.12);
+  pointer-events: none;
+  z-index: 25;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
+}
+
+/* —— Ping wheel (Ctrl/Alt + clic) —— */
+.ping-wheel {
+  position: absolute;
+  z-index: 40;
+  pointer-events: none;
+}
+
+.ping-wheel__backdrop {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at center,
+    rgba(32, 38, 54, 0.82) 36%,
+    rgba(24, 28, 40, 0.78) 100%
+  );
+  border: 2px solid rgba(200, 155, 60, 0.72);
+  box-shadow:
+    0 8px 28px rgba(0, 0, 0, 0.45),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.ping-wheel__svg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.ping-wheel__wedge {
+  fill: rgba(200, 155, 60, 0.38);
+  stroke: rgba(200, 155, 60, 0.55);
+  stroke-width: 1;
+}
+
+.ping-wheel__ring {
+  stroke: rgba(200, 155, 60, 0.28);
+  stroke-width: 1;
+}
+
+.ping-wheel__slot {
+  position: absolute;
+  width: 40px;
+  height: 40px;
+  margin: -20px 0 0 -20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+  transition: filter 0.06s ease;
+}
+
+.ping-wheel__slot--on {
+  filter: drop-shadow(0 0 8px rgba(200, 155, 60, 0.95));
+  z-index: 3;
+}
+
+.ping-wheel__slot-inner {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.ping-wheel__slot--on .ping-wheel__slot-inner {
+  background: rgba(200, 155, 60, 0.32);
+  outline: 2px solid rgba(200, 155, 60, 0.9);
+}
+
+.ping-wheel__slot-inner img {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+}
+
+.ping-wheel__hub {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: rgba(18, 22, 32, 0.88);
+  border: 2px solid rgba(200, 155, 60, 0.6);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  text-align: center;
+  z-index: 4;
+}
+
+.ping-wheel__hub-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: #c89b3c;
+}
+
+.ping-wheel__hub-hint {
+  font-size: 8px;
+  color: rgba(240, 230, 210, 0.55);
+  line-height: 1.1;
+  max-width: 60px;
+}
+
+/* —— Text boxes —— */
+.map-text-box {
+  position: absolute;
+  pointer-events: none;
+  padding: 2px 4px;
+  overflow: hidden;
+  word-break: break-word;
+  line-height: 1.15;
+  font-weight: 600;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
+  box-sizing: border-box;
+}
+
+.map-text-box--preview,
+.map-text-box--editor {
+  pointer-events: none;
+  border: 2px dashed rgba(200, 155, 60, 0.85);
+  background: rgba(200, 155, 60, 0.08);
+  border-radius: 2px;
+}
+
+.map-text-box--editor {
+  pointer-events: auto;
+  padding: 0;
+  border-style: solid;
+  background: rgba(8, 10, 16, 0.82);
+}
+
+.map-text-box__input {
+  width: 100%;
+  height: 100%;
+  resize: none;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  padding: 2px 4px;
+  box-sizing: border-box;
+}
+
 .map-marker {
   position: absolute;
   pointer-events: auto;
@@ -981,6 +1288,7 @@
 }
 
 .map-marker--player img,
+.map-marker--enemy img,
 .map-marker img {
   width: 36px;
   height: 36px;
@@ -988,6 +1296,27 @@
   filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.8));
   border-radius: 50%;
   border: 2px solid var(--accent);
+}
+
+.map-marker--enemy img {
+  border-color: #e84057;
+}
+
+.map-marker--minion img {
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 50%;
+}
+
+.map-marker__role--enemy {
+  background: rgba(232, 64, 87, 0.2);
+  color: #ff8a9a;
+  border-color: #e84057;
+}
+
+.map-marker__player--enemy {
+  color: #ff8a9a;
 }
 
 .map-marker__role {
@@ -1129,7 +1458,7 @@
   font-variant-numeric: tabular-nums;
   color: rgba(232, 220, 190, 0.92);
   text-shadow: 0 0 4px rgba(0, 0, 0, 0.95), 0 1px 2px rgba(0, 0, 0, 0.9);
-  pointer-events: none;
+  pointer-events: auto;
   line-height: 1;
   letter-spacing: 0.02em;
 }

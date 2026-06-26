@@ -290,24 +290,69 @@ async function downloadSummonerSpells(version, summonerData) {
 
 async function copyMapImage() {
   console.log('\n📦 Mapa principal (grieta)...')
-  const src = path.join(ROOT, 'mover', 'grieta.png')
-  const dest = path.join(ASSETS, 'minimap', 'grieta.png')
-  await fs.mkdir(path.dirname(dest), { recursive: true })
+  await fs.mkdir(path.join(ASSETS, 'minimap'), { recursive: true })
 
-  try {
-    await fs.access(src)
-    await fs.copyFile(src, dest)
-    console.log('  ✓ grieta.png (desde mover/)')
-    return true
-  } catch {
-    console.warn('  ⚠ mover/grieta.png no encontrado; usa map_full como respaldo')
+  const pngDest = path.join(ASSETS, 'minimap', 'grieta.png')
+  const webpDest = path.join(ASSETS, 'minimap', 'grieta.webp')
+
+  const pngCandidates = [
+    path.join(ROOT, 'mover', 'grieta_v3.png'),
+    path.join(ROOT, 'mover', 'grieta.png'),
+  ]
+
+  for (const src of pngCandidates) {
     try {
-      await fs.access(path.join(ASSETS, 'minimap', 'map_full.png'))
-      await fs.copyFile(path.join(ASSETS, 'minimap', 'map_full.png'), dest)
-      console.log('  ✓ grieta.png (copia de map_full.png)')
+      await fs.access(src)
+      await fs.copyFile(src, pngDest)
+      console.log(`  ✓ grieta.png (desde ${path.relative(ROOT, src)})`)
       return true
     } catch {
-      return false
+      /* try next */
+    }
+  }
+
+  const webpCandidates = [path.join(ROOT, 'mover', 'grieta_v2.webp')]
+
+  for (const src of webpCandidates) {
+    try {
+      await fs.access(src)
+      await fs.copyFile(src, webpDest)
+      console.log(`  ✓ grieta.webp (desde ${path.relative(ROOT, src)})`)
+      return true
+    } catch {
+      /* try next */
+    }
+  }
+
+  console.warn('  ⚠ mover/grieta_v3.png no encontrado; usa map_full como respaldo')
+  try {
+    await fs.access(path.join(ASSETS, 'minimap', 'map_full.png'))
+    await fs.copyFile(path.join(ASSETS, 'minimap', 'map_full.png'), pngDest)
+    console.log('  ✓ grieta.png (copia de map_full.png)')
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function copyMoverMinions() {
+  console.log('  Minions (mover/)...')
+  const pairs = [
+    { src: 'blue.webp', dest: 'blue.webp' },
+    { src: 'red.webp', dest: 'red.webp' },
+  ]
+  const destDir = path.join(ASSETS, 'minimap', 'minions')
+  await fs.mkdir(destDir, { recursive: true })
+
+  for (const { src, dest } of pairs) {
+    const from = path.join(ROOT, 'mover', src)
+    const to = path.join(destDir, dest)
+    try {
+      await fs.access(from)
+      await fs.copyFile(from, to)
+      console.log(`  ✓ ${dest} (desde mover/${src})`)
+    } catch {
+      console.warn(`  ⚠ mover/${src} no encontrado`)
     }
   }
 }
@@ -390,6 +435,8 @@ async function downloadMinimapAssets() {
       /* skip */
     }
   }
+
+  await copyMoverMinions()
 
   return { pings, icons, maps }
 }
