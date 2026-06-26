@@ -31,6 +31,7 @@ export interface MapMarker {
   playerRole?: string
   championId?: string
   championName?: string
+  authorId?: string
 }
 
 export interface DrawingStroke {
@@ -39,6 +40,7 @@ export interface DrawingStroke {
   points: MapPoint[]
   color: string
   width: number
+  authorId?: string
 }
 
 export interface Jugada {

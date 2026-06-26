@@ -29,14 +29,13 @@ import {
   type Viewport,
 } from './types'
 import { focusViewportOnPoint } from './markerUtils'
+import { loadClientId } from './sync/types'
 import {
-  createEmptyHistory,
-  popLastSnapshot,
-  pushSnapshot,
-  redoFromStack,
-  snapshotContent,
-  undoFromStack,
-  type JugadaHistory,
+  applyPersonalEntry,
+  createPersonalHistory,
+  pushPersonalUndo,
+  type PersonalHistory,
+  type PersonalUndoEntry,
 } from './history'
 import {
   loadActiveJugadaId,
@@ -65,20 +64,19 @@ interface PlanningContextValue {
   setMapDimensions: (d: { w: number; h: number }) => void
   selectedMarkerId: string | null
   setSelectedMarkerId: (id: string | null) => void
-  updateMarker: (id: string, patch: Partial<MapMarker>, immediate?: boolean, recordHistory?: boolean) => void
-  moveMarker: (id: string, position: MapPoint, immediate?: boolean, recordHistory?: boolean) => void
+  updateMarker: (id: string, patch: Partial<MapMarker>, immediate?: boolean) => void
+  moveMarker: (id: string, position: MapPoint, immediate?: boolean) => void
   focusOnPlayer: (playerId: string) => void
   addMarker: (m: Omit<MapMarker, 'id'>) => void
   placePlayerMarker: (m: Omit<MapMarker, 'id' | 'category'>) => void
-  removeMarker: (id: string, recordHistory?: boolean) => void
+  removeMarker: (id: string) => void
   addStroke: (s: Omit<DrawingStroke, 'id'>) => void
   removeStroke: (id: string) => void
   undo: () => void
   redo: () => void
   canUndo: boolean
   canRedo: boolean
-  pushHistory: () => void
-  discardLastHistory: () => void
+  recordMoveUndo: (id: string, from: MapPoint, to: MapPoint) => void
   switchJugada: (id: string) => void
   newJugada: () => void
   renameJugada: (name: string) => void
@@ -174,7 +172,8 @@ export function PlanningProvider({
   const [selectedMarkerId, setSelectedMarkerId] = useState<string | null>(null)
   const [mapDimensions, setMapDimensions] = useState({ w: 1, h: 1 })
   const [historyTick, setHistoryTick] = useState(0)
-  const historyRef = useRef<Map<string, JugadaHistory>>(new Map())
+  const clientIdRef = useRef(loadClientId())
+  const personalHistoryRef = useRef<Map<string, PersonalHistory>>(new Map())
 
   const patchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const patchThrottleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -191,9 +190,6 @@ export function PlanningProvider({
       const local = prev.find((j) => j.id === jugada.id)
       return replaceJugada(prev, mergeRemoteJugada(local, jugada))
     })
-    const stack = historyRef.current.get(jugada.id)
-    if (stack) stack.future = []
-    setHistoryTick((t) => t + 1)
   }, [])
 
   const onRemoteJugadas = useCallback((list: Jugada[], remoteActiveId: string | null) => {
@@ -317,35 +313,22 @@ export function PlanningProvider({
     [schedulePatch],
   )
 
-  const getHistory = useCallback(
-    (jugadaId: string) => {
-      let stack = historyRef.current.get(jugadaId)
-      if (!stack) {
-        stack = createEmptyHistory()
-        historyRef.current.set(jugadaId, stack)
-      }
-      return stack
+  const getPersonalHistory = useCallback((jugadaId: string) => {
+    const key = `${clientIdRef.current}:${jugadaId}`
+    let stack = personalHistoryRef.current.get(key)
+    if (!stack) {
+      stack = createPersonalHistory()
+      personalHistoryRef.current.set(key, stack)
+    }
+    return stack
+  }, [])
+
+  const recordUndo = useCallback(
+    (entry: PersonalUndoEntry) => {
+      pushPersonalUndo(getPersonalHistory(activeIdRef.current), entry)
+      setHistoryTick((t) => t + 1)
     },
-    [],
-  )
-
-  const pushHistory = useCallback(() => {
-    if (!activeJugada) return
-    pushSnapshot(getHistory(activeJugada.id), snapshotContent(activeJugada))
-    setHistoryTick((t) => t + 1)
-  }, [activeJugada, getHistory])
-
-  const discardLastHistory = useCallback(() => {
-    if (!activeJugada) return
-    popLastSnapshot(getHistory(activeJugada.id))
-    setHistoryTick((t) => t + 1)
-  }, [activeJugada, getHistory])
-
-  const applyContent = useCallback(
-    (markers: MapMarker[], strokes: DrawingStroke[], syncAction: string) => {
-      patchActiveJugada(() => ({ markers, strokes }), syncAction, 'instant')
-    },
-    [patchActiveJugada],
+    [getPersonalHistory],
   )
 
   const patchContent = useCallback(
@@ -354,38 +337,52 @@ export function PlanningProvider({
       syncAction: string,
       syncMode: 'instant' | 'debounce' | 'throttle' = 'instant',
       syncMs = 0,
-      recordHistory = true,
     ) => {
-      if (!activeJugada) return
-      if (recordHistory) pushHistory()
       patchActiveJugada(build, syncAction, syncMode, syncMs)
     },
-    [activeJugada, patchActiveJugada, pushHistory],
+    [patchActiveJugada],
+  )
+
+  const recordMoveUndo = useCallback(
+    (id: string, from: MapPoint, to: MapPoint) => {
+      recordUndo({ kind: 'move-marker', id, from, to })
+    },
+    [recordUndo],
   )
 
   const undo = useCallback(() => {
     if (!activeJugada) return
-    const stack = getHistory(activeJugada.id)
-    const prev = undoFromStack(stack, snapshotContent(activeJugada))
-    if (!prev) return
-    applyContent(prev.markers, prev.strokes, 'deshizo')
+    const stack = getPersonalHistory(activeJugada.id)
+    const entry = stack.undo.pop()
+    if (!entry) return
+    stack.redo.push(entry)
+    patchActiveJugada(
+      (j) => applyPersonalEntry(j, entry, 'undo'),
+      'deshizo',
+      'instant',
+    )
     setSelectedMarkerId(null)
     setHistoryTick((t) => t + 1)
-  }, [activeJugada, applyContent, getHistory])
+  }, [activeJugada, getPersonalHistory, patchActiveJugada])
 
   const redo = useCallback(() => {
     if (!activeJugada) return
-    const stack = getHistory(activeJugada.id)
-    const next = redoFromStack(stack, snapshotContent(activeJugada))
-    if (!next) return
-    applyContent(next.markers, next.strokes, 'rehizo')
+    const stack = getPersonalHistory(activeJugada.id)
+    const entry = stack.redo.pop()
+    if (!entry) return
+    stack.undo.push(entry)
+    patchActiveJugada(
+      (j) => applyPersonalEntry(j, entry, 'redo'),
+      'rehizo',
+      'instant',
+    )
     setSelectedMarkerId(null)
     setHistoryTick((t) => t + 1)
-  }, [activeJugada, applyContent, getHistory])
+  }, [activeJugada, getPersonalHistory, patchActiveJugada])
 
-  const activeHistory = activeJugada ? getHistory(activeJugada.id) : createEmptyHistory()
-  const canUndo = activeHistory.past.length > 0
-  const canRedo = activeHistory.future.length > 0
+  const personalStack = activeJugada ? getPersonalHistory(activeJugada.id) : createPersonalHistory()
+  const canUndo = personalStack.undo.length > 0
+  const canRedo = personalStack.redo.length > 0
   void historyTick
 
   const setViewport = useCallback((v: Viewport) => {
@@ -398,46 +395,49 @@ export function PlanningProvider({
 
   const addMarker = useCallback(
     (m: Omit<MapMarker, 'id'>) => {
-      patchContent(
-        (j) => ({ markers: [...j.markers, { ...m, id: createId() }] }),
-        `colocó ${m.label}`,
-      )
+      const marker: MapMarker = { ...m, id: createId(), authorId: clientIdRef.current }
+      recordUndo({ kind: 'add-marker', marker })
+      patchContent((j) => ({ markers: [...j.markers, marker] }), `colocó ${m.label}`)
     },
-    [patchContent],
+    [patchContent, recordUndo],
   )
 
   const placePlayerMarker = useCallback(
     (m: Omit<MapMarker, 'id' | 'category'>) => {
+      const current = jugadas.find((j) => j.id === activeIdRef.current)
+      if (!current) return
+      const removed = current.markers.find((x) => x.playerId === m.playerId)
+      if (removed) recordUndo({ kind: 'remove-marker', marker: removed })
+      const marker: MapMarker = {
+        ...m,
+        id: createId(),
+        category: 'player',
+        label: `${m.playerName} — ${m.championName}`,
+        authorId: clientIdRef.current,
+      }
+      recordUndo({ kind: 'add-marker', marker })
       patchContent((j) => {
         const withoutPlayer = j.markers.filter((x) => x.playerId !== m.playerId)
-        const marker: MapMarker = {
-          ...m,
-          id: createId(),
-          category: 'player',
-          label: `${m.playerName} — ${m.championName}`,
-        }
         return { markers: [...withoutPlayer, marker] }
       }, `colocó a ${m.playerName} (${m.championName})`)
     },
-    [patchContent],
+    [jugadas, patchContent, recordUndo],
   )
 
   const removeMarker = useCallback(
-    (id: string, recordHistory = true) => {
-      patchContent(
-        (j) => ({ markers: j.markers.filter((m) => m.id !== id) }),
-        'eliminó un marcador',
-        'instant',
-        0,
-        recordHistory,
-      )
+    (id: string) => {
+      if (activeJugada) {
+        const removed = activeJugada.markers.find((m) => m.id === id)
+        if (removed) recordUndo({ kind: 'remove-marker', marker: removed })
+      }
+      patchContent((j) => ({ markers: j.markers.filter((m) => m.id !== id) }), 'eliminó un marcador')
       setSelectedMarkerId((cur) => (cur === id ? null : cur))
     },
-    [patchContent],
+    [activeJugada, patchContent, recordUndo],
   )
 
   const updateMarker = useCallback(
-    (id: string, patch: Partial<MapMarker>, immediate = true, recordHistory = true) => {
+    (id: string, patch: Partial<MapMarker>, immediate = true) => {
       patchContent(
         (j) => ({
           markers: j.markers.map((m) => (m.id === id ? { ...m, ...patch } : m)),
@@ -445,15 +445,14 @@ export function PlanningProvider({
         'movió marcador',
         immediate ? 'instant' : 'throttle',
         40,
-        recordHistory,
       )
     },
     [patchContent],
   )
 
   const moveMarker = useCallback(
-    (id: string, position: MapPoint, immediate = false, recordHistory = true) => {
-      updateMarker(id, { position }, immediate, recordHistory)
+    (id: string, position: MapPoint, immediate = false) => {
+      updateMarker(id, { position }, immediate)
     },
     [updateMarker],
   )
@@ -479,22 +478,25 @@ export function PlanningProvider({
 
   const addStroke = useCallback(
     (s: Omit<DrawingStroke, 'id'>) => {
+      const stroke: DrawingStroke = { ...s, id: createId(), authorId: clientIdRef.current }
+      recordUndo({ kind: 'add-stroke', stroke })
       patchContent(
-        (j) => ({ strokes: [...j.strokes, { ...s, id: createId() }] }),
+        (j) => ({ strokes: [...j.strokes, stroke] }),
         s.type === 'arrow' ? 'dibujó una flecha' : 'dibujó en el mapa',
       )
     },
-    [patchContent],
+    [patchContent, recordUndo],
   )
 
   const removeStroke = useCallback(
     (id: string) => {
-      patchContent(
-        (j) => ({ strokes: j.strokes.filter((s) => s.id !== id) }),
-        'borró un trazo',
-      )
+      if (activeJugada) {
+        const removed = activeJugada.strokes.find((s) => s.id === id)
+        if (removed) recordUndo({ kind: 'remove-stroke', stroke: removed })
+      }
+      patchContent((j) => ({ strokes: j.strokes.filter((s) => s.id !== id) }), 'borró un trazo')
     },
-    [patchContent],
+    [activeJugada, patchContent, recordUndo],
   )
 
   const switchJugada = useCallback(
@@ -621,8 +623,7 @@ export function PlanningProvider({
     redo,
     canUndo,
     canRedo,
-    pushHistory,
-    discardLastHistory,
+    recordMoveUndo,
     switchJugada,
     newJugada,
     renameJugada,

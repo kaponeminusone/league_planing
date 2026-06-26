@@ -37,8 +37,7 @@ export function MapCanvas() {
     removeMarker,
     addStroke,
     removeStroke,
-    pushHistory,
-    discardLastHistory,
+    recordMoveUndo,
     selectedAsset,
     drawColor,
     timerSeconds,
@@ -69,6 +68,7 @@ export function MapCanvas() {
 
   const viewport = activeJugada.viewport
   const showPlaceGhost = tool === 'place' && selectedAsset !== null && !dragOver
+  const isDrawingTool = tool === 'draw' || tool === 'arrow'
   const isStrokeDragging = strokeDraft !== null
 
   useEffect(() => {
@@ -265,13 +265,12 @@ export function MapCanvas() {
     if (e.button !== 0) return
     const pt = toMap(e.clientX, e.clientY)
 
-    if (hit) {
+    if (hit && !isDrawingTool) {
       if (tool === 'erase') {
         removeMarker(hit.id)
         return
       }
       setSelectedMarkerId(hit.id)
-      pushHistory()
       setMarkerDrag({
         id: hit.id,
         grabDx: pt.x - hit.position.x,
@@ -282,8 +281,10 @@ export function MapCanvas() {
       return
     }
 
-    setSelectedMarkerId(null)
-    setTimerEditId(null)
+    if (!isDrawingTool) {
+      setSelectedMarkerId(null)
+      setTimerEditId(null)
+    }
 
     if (tool === 'pan') {
       setPanning(true)
@@ -345,7 +346,6 @@ export function MapCanvas() {
           y: Math.min(1, Math.max(0, pt.y - markerDrag.grabDy)),
         },
         false,
-        false,
       )
       setTrashHot(isOverTrash(e.clientX, e.clientY))
       return
@@ -366,7 +366,7 @@ export function MapCanvas() {
   const onPointerUp = (e: React.PointerEvent) => {
     if (markerDrag) {
       if (trashHot || isOverTrash(e.clientX, e.clientY)) {
-        removeMarker(markerDrag.id, false)
+        removeMarker(markerDrag.id)
       } else {
         const pt = toMap(e.clientX, e.clientY)
         const finalPos = {
@@ -376,9 +376,8 @@ export function MapCanvas() {
         const moved =
           Math.hypot(finalPos.x - markerDrag.startPos.x, finalPos.y - markerDrag.startPos.y) > 0.002
         if (moved) {
-          moveMarker(markerDrag.id, finalPos, true, false)
-        } else {
-          discardLastHistory()
+          moveMarker(markerDrag.id, finalPos, true)
+          recordMoveUndo(markerDrag.id, markerDrag.startPos, finalPos)
         }
       }
       setMarkerDrag(null)
@@ -453,7 +452,7 @@ export function MapCanvas() {
   return (
     <div
       ref={containerRef}
-      className={`map-canvas ${dragOver ? 'map-canvas--drop' : ''}`}
+      className={`map-canvas ${dragOver ? 'map-canvas--drop' : ''} ${isDrawingTool ? 'map-canvas--draw-tool' : ''}`}
       style={{ cursor: resolvedCursor }}
       onWheel={onWheel}
       onPointerDown={onPointerDown}

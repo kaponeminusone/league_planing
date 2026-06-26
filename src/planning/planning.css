@@ -967,6 +967,10 @@
   outline-offset: -2px;
 }
 
+.map-canvas--draw-tool .map-marker {
+  pointer-events: none;
+}
+
 .map-marker {
   position: absolute;
   pointer-events: auto;
