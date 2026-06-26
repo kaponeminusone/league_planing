@@ -19,6 +19,32 @@ const DIST_PATH = process.env.DIST_PATH
   ? path.resolve(process.env.DIST_PATH)
   : null
 
+function siteBaseFromRequest(req) {
+  const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost'
+  const protoHeader = req.headers['x-forwarded-proto']
+  const proto =
+    typeof protoHeader === 'string'
+      ? protoHeader.split(',')[0].trim()
+      : host.includes('localhost') || host.startsWith('127.0.0.1')
+        ? 'http'
+        : 'https'
+  return `${proto}://${host}`
+}
+
+function injectSocialMeta(html, req) {
+  const base = siteBaseFromRequest(req)
+  return html.replaceAll('__OG_URL__', base).replaceAll('__OG_IMAGE__', `${base}/og-image.png`)
+}
+
+function sendHtml(res, buf, req) {
+  let body = buf.toString('utf-8')
+  if (body.includes('__OG_URL__') || body.includes('__OG_IMAGE__')) {
+    body = injectSocialMeta(body, req)
+  }
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+  res.end(body)
+}
+
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -339,13 +365,16 @@ async function handleHttp(req, res) {
 
     const buf = await readFile(filePath)
     const ext = path.extname(filePath).toLowerCase()
+    if (ext === '.html') {
+      sendHtml(res, buf, req)
+      return
+    }
     res.writeHead(200, { 'Content-Type': MIME[ext] ?? 'application/octet-stream' })
     res.end(buf)
   } catch {
     try {
       const buf = await readFile(path.join(DIST_PATH, 'index.html'))
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
-      res.end(buf)
+      sendHtml(res, buf, req)
     } catch {
       res.writeHead(404)
       res.end('Not found')

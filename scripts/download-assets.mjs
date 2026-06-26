@@ -335,6 +335,32 @@ async function copyMapImage() {
   }
 }
 
+async function copyShareImage() {
+  const dest = path.join(ROOT, 'public', 'og-image.png')
+  const candidates = [
+    path.join(ROOT, 'mover', 'Conclave Cromatico.png'),
+    path.join(ROOT, 'mover', 'conclave-cromatico.png'),
+  ]
+
+  for (const src of candidates) {
+    try {
+      await fs.access(src)
+      await fs.copyFile(src, dest)
+      console.log(`  ✓ og-image.png (desde ${path.relative(ROOT, src)})`)
+      return
+    } catch {
+      /* try next */
+    }
+  }
+
+  try {
+    await fs.access(dest)
+    console.log('  · og-image.png (existente en public/)')
+  } catch {
+    console.warn('  ⚠ mover/Conclave Cromatico.png no encontrado')
+  }
+}
+
 async function copyAppIcon() {
   const dest = path.join(ROOT, 'public', 'app-icon.png')
   const candidates = [
@@ -597,6 +623,7 @@ async function main() {
 
   await copyMapImage()
   await copyBootIcon()
+  await copyShareImage()
 
   const manifest = {
     version,
