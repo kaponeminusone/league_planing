@@ -11,8 +11,18 @@ import { readFile, stat } from 'fs/promises'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { WebSocketServer } from 'ws'
+import { loadLocalEnv } from '../scripts/load-local-env.mjs'
+import {
+  closeMongo,
+  connectMongo,
+  getMongoStatus,
+  isPersistenceEnabled,
+  loadRoom,
+  saveRoom,
+} from './mongo.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+loadLocalEnv()
 const PORT = Number(process.env.PORT ?? process.env.SYNC_PORT ?? 3001)
 const HOST = process.env.HOST ?? '0.0.0.0'
 const DIST_PATH = process.env.DIST_PATH
@@ -68,6 +78,17 @@ const room = {
   lastEditBy: null,
   lastEditAt: null,
   lastEditAction: null,
+}
+
+let persistTimer = null
+
+function schedulePersist() {
+  if (!isPersistenceEnabled()) return
+  if (persistTimer) clearTimeout(persistTimer)
+  persistTimer = setTimeout(() => {
+    persistTimer = null
+    void saveRoom(room)
+  }, 400)
 }
 
 /** @type {Map<import('ws').WebSocket, { clientId: string; userName: string; activeId: string | null }>} */
@@ -151,6 +172,7 @@ function handleMessage(ws, raw) {
         room.activeId = msg.state.activeId ?? msg.state.jugadas[0]?.id ?? null
         room.team = msg.state.team ?? []
         touch(userName, 'subió estado inicial')
+        schedulePersist()
         bootstrapped = true
       }
 
@@ -195,6 +217,7 @@ function handleMessage(ws, raw) {
       else room.jugadas.push(jugada)
       const action = msg.action ?? 'editó la jugada'
       touch(client.userName, action)
+      schedulePersist()
       broadcast(
         {
           type: 'jugada',
@@ -216,6 +239,7 @@ function handleMessage(ws, raw) {
       room.activeId = msg.activeId ?? room.activeId
       const action = msg.action ?? 'actualizó el playbook'
       touch(client.userName, action)
+      schedulePersist()
       broadcast(
         {
           type: 'jugadas',
@@ -236,6 +260,7 @@ function handleMessage(ws, raw) {
       room.activeId = msg.activeId
       client.activeId = msg.activeId ?? null
       touch(client.userName, 'cambió de jugada')
+      schedulePersist()
       broadcast(
         {
           type: 'active',
@@ -255,6 +280,7 @@ function handleMessage(ws, raw) {
       if (!Array.isArray(msg.team)) return
       room.team = msg.team
       touch(client.userName, 'actualizó pools del equipo')
+      schedulePersist()
       broadcast(
         {
           type: 'team',
@@ -308,6 +334,7 @@ function handleMessage(ws, raw) {
       const idx = room.jugadas.findIndex((j) => j.id === jugadaId)
       if (idx >= 0) {
         room.jugadas[idx] = { ...room.jugadas[idx], viewport }
+        schedulePersist()
       }
       broadcast(
         {
@@ -336,7 +363,14 @@ async function handleHttp(req, res) {
 
   if (url.pathname === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' })
-    res.end(JSON.stringify({ ok: true, clients: clients.size }))
+    res.end(
+      JSON.stringify({
+        ok: true,
+        clients: clients.size,
+        mongo: getMongoStatus(),
+        jugadas: room.jugadas.length,
+      }),
+    )
     return
   }
 
@@ -398,12 +432,44 @@ wss.on('connection', (ws) => {
   })
 })
 
-httpServer.listen(PORT, HOST, () => {
-  if (DIST_PATH) {
-    console.log(`App + sync  http://${HOST}:${PORT}`)
-    console.log(`WebSocket   ws://${HOST}:${PORT}`)
-  } else {
-    console.log(`Sync server  ws://${HOST}:${PORT}`)
+async function start() {
+  await connectMongo()
+  const saved = await loadRoom()
+  if (saved) {
+    room.jugadas = saved.jugadas
+    room.activeId = saved.activeId
+    room.team = saved.team
+    room.lastEditBy = saved.lastEditBy
+    room.lastEditAt = saved.lastEditAt
+    room.lastEditAction = saved.lastEditAction
+    console.log(
+      `MongoDB: sala restaurada (${saved.jugadas.length} jugadas, ${saved.team.length} miembros)`,
+    )
   }
-  console.log(`Sala compartida — jugadas en tiempo real.`)
-})
+
+  httpServer.listen(PORT, HOST, () => {
+    if (DIST_PATH) {
+      console.log(`App + sync  http://${HOST}:${PORT}`)
+      console.log(`WebSocket   ws://${HOST}:${PORT}`)
+    } else {
+      console.log(`Sync server  ws://${HOST}:${PORT}`)
+    }
+    console.log(`Sala compartida — jugadas en tiempo real.`)
+  })
+}
+
+void start()
+
+async function shutdown() {
+  if (persistTimer) {
+    clearTimeout(persistTimer)
+    persistTimer = null
+    if (isPersistenceEnabled()) await saveRoom(room)
+  }
+  await closeMongo()
+  httpServer.close()
+  process.exit(0)
+}
+
+process.on('SIGTERM', () => void shutdown())
+process.on('SIGINT', () => void shutdown())

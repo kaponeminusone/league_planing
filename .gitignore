@@ -13,6 +13,14 @@ public/assets
 public/data
 dist-ssr
 *.local
+.env
+.env.*
+!.env.example
+
+# Credenciales locales (solo local/.env.example y README se versionan)
+local/*
+!local/.env.example
+!local/README.md
 
 # Editor directories and files
 .vscode/*
