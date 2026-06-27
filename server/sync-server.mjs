@@ -15,6 +15,7 @@ import { loadLocalEnv } from './load-local-env.mjs'
 import {
   closeMongo,
   connectMongo,
+  getMongoDiagnostics,
   getMongoStatus,
   isPersistenceEnabled,
   loadRoom,
@@ -362,12 +363,15 @@ async function handleHttp(req, res) {
   const url = new URL(req.url || '/', `http://${req.headers.host ?? 'localhost'}`)
 
   if (url.pathname === '/health') {
+    const mongo = getMongoDiagnostics()
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(
       JSON.stringify({
         ok: true,
         clients: clients.size,
-        mongo: getMongoStatus(),
+        mongo: mongo.status,
+        mongoDb: mongo.db,
+        mongoHint: mongo.hint,
         jugadas: room.jugadas.length,
       }),
     )
