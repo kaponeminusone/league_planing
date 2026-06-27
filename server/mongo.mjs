@@ -33,6 +33,9 @@ export async function connectMongo() {
         strict: true,
         deprecationErrors: true,
       },
+      serverSelectionTimeoutMS: 15000,
+      /** Evita handshake TLS roto por IPv6 en algunos hosts (Render, Alpine). */
+      autoSelectFamily: false,
     })
     await client.connect()
     await client.db('admin').command({ ping: 1 })
@@ -42,7 +45,13 @@ export async function connectMongo() {
     return true
   } catch (err) {
     status = 'error'
-    console.error('MongoDB: no se pudo conectar — modo solo memoria:', err.message)
+    const msg = err.message || String(err)
+    console.error('MongoDB: no se pudo conectar — modo solo memoria:', msg)
+    if (/ssl|tls|alert internal/i.test(msg)) {
+      console.error(
+        'MongoDB: si persiste, revisa Atlas → Network Access (0.0.0.0/0) y MONGODB_URI en Render.',
+      )
+    }
     return false
   }
 }
